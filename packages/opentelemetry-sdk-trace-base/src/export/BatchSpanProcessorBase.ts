@@ -136,7 +136,11 @@ export abstract class BatchSpanProcessorBase<T extends BufferConfig>
     }
 
     this._finishedSpans.push(span);
-    this._maybeStartTimer();
+    if (this._finishedSpans.length == this._maxExportBatchSize) {
+      this._flushOneBatchAndContinue()
+    } else {
+      this._maybeStartTimer();
+    }
   }
 
   /**
@@ -215,16 +219,7 @@ export abstract class BatchSpanProcessorBase<T extends BufferConfig>
   private _maybeStartTimer() {
     if (this._timer !== undefined) return;
     this._timer = setTimeout(() => {
-      this._flushOneBatch()
-        .then(() => {
-          if (this._finishedSpans.length > 0) {
-            this._clearTimer();
-            this._maybeStartTimer();
-          }
-        })
-        .catch(e => {
-          globalErrorHandler(e);
-        });
+      this._flushOneBatchAndContinue()
     }, this._scheduledDelayMillis);
     unrefTimer(this._timer);
   }
@@ -234,6 +229,27 @@ export abstract class BatchSpanProcessorBase<T extends BufferConfig>
       clearTimeout(this._timer);
       this._timer = undefined;
     }
+  }
+
+  private _flushOneBatchAndContinue() {
+    this._flushOneBatch()
+      .then(() => {
+        if (this._finishedSpans.length >= this._maxExportBatchSize) {
+          this._flushOneBatchAndContinue()
+        } else if (this._finishedSpans.length > 0) {
+          this._clearTimer();
+          this._maybeStartTimer();
+        }
+      })
+      .catch(e => {
+        globalErrorHandler(e);
+        if (this._finishedSpans.length >= this._maxExportBatchSize) {
+          this._flushOneBatchAndContinue()
+        } else if (this._finishedSpans.length > 0) {
+          this._clearTimer();
+          this._maybeStartTimer();
+        }
+      });
   }
 
   protected abstract onShutdown(): void;
