@@ -45,6 +45,7 @@ export abstract class BatchSpanProcessorBase<T extends BufferConfig>
   private _timer: NodeJS.Timeout | undefined;
   private _shutdownOnce: BindOnceFuture<void>;
   private _droppedSpansCount: number = 0;
+  private _isFlushInProgress: boolean = false;
 
   constructor(private readonly _exporter: SpanExporter, config?: T) {
     const env = getEnv();
@@ -136,8 +137,8 @@ export abstract class BatchSpanProcessorBase<T extends BufferConfig>
     }
 
     this._finishedSpans.push(span);
-    if (this._finishedSpans.length == this._maxExportBatchSize) {
-      this._flushOneBatchAndContinue()
+    if (this._finishedSpans.length === this._maxExportBatchSize) {
+      this._flush();
     } else {
       this._maybeStartTimer();
     }
@@ -158,6 +159,7 @@ export abstract class BatchSpanProcessorBase<T extends BufferConfig>
       );
       for (let i = 0, j = count; i < j; i++) {
         const spans = this._finishedSpans.splice(0, this._maxExportBatchSize);
+        // run exports in parallel ignoring _isFlushInProgress
         promises.push(this._export(spans));
       }
       Promise.all(promises)
@@ -215,7 +217,7 @@ export abstract class BatchSpanProcessorBase<T extends BufferConfig>
   private _maybeStartTimer() {
     if (this._timer !== undefined) return;
     this._timer = setTimeout(() => {
-      this._flushOneBatchAndContinue()
+      this._flush();
     }, this._scheduledDelayMillis);
     unrefTimer(this._timer);
   }
@@ -227,21 +229,28 @@ export abstract class BatchSpanProcessorBase<T extends BufferConfig>
     }
   }
 
-  private _flushOneBatchAndContinue() {
+  private _flush() {
+    if (this._isFlushInProgress) {
+      return;
+    }
+    this._isFlushInProgress = true;
     this._clearTimer();
+    
     const spans = this._finishedSpans.splice(0, this._maxExportBatchSize);
     this._export(spans)
       .then(() => {
+        this._isFlushInProgress = false;
         if (this._finishedSpans.length >= this._maxExportBatchSize) {
-          this._flushOneBatchAndContinue()
+          this._flush();
         } else if (this._finishedSpans.length > 0) {
           this._maybeStartTimer();
         }
       })
       .catch(e => {
+        this._isFlushInProgress = false;
         globalErrorHandler(e);
         if (this._finishedSpans.length >= this._maxExportBatchSize) {
-          this._flushOneBatchAndContinue()
+          this._flush();
         } else if (this._finishedSpans.length > 0) {
           this._maybeStartTimer();
         }
