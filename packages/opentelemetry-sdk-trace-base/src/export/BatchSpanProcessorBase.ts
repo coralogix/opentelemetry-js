@@ -235,7 +235,7 @@ export abstract class BatchSpanProcessorBase<T extends BufferConfig>
     }
     this._isFlushInProgress = true;
     this._clearTimer();
-    
+
     const spans = this._finishedSpans.splice(0, this._maxExportBatchSize);
     this._export(spans)
       .then(() => {
