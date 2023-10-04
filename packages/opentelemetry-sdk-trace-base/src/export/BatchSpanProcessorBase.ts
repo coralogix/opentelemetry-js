@@ -163,7 +163,7 @@ export abstract class BatchSpanProcessorBase<T extends BufferConfig>
         promises.push(this._export(spans));
       }
       if (this._flushInProgress) {
-        promises.push(this._flushInProgress)
+        promises.push(this._flushInProgress);
       }
       Promise.all(promises)
         .then(() => {
