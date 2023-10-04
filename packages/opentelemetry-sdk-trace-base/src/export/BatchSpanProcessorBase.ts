@@ -45,7 +45,7 @@ export abstract class BatchSpanProcessorBase<T extends BufferConfig>
   private _timer: NodeJS.Timeout | undefined;
   private _shutdownOnce: BindOnceFuture<void>;
   private _droppedSpansCount: number = 0;
-  private _isFlushInProgress: boolean = false;
+  private _flushInProgress: Promise<void> | null = null;
 
   constructor(private readonly _exporter: SpanExporter, config?: T) {
     const env = getEnv();
@@ -162,6 +162,9 @@ export abstract class BatchSpanProcessorBase<T extends BufferConfig>
         // run exports in parallel ignoring _isFlushInProgress
         promises.push(this._export(spans));
       }
+      if (this._flushInProgress) {
+        promises.push(this._flushInProgress);
+      }
       Promise.all(promises)
         .then(() => {
           resolve();
@@ -230,16 +233,15 @@ export abstract class BatchSpanProcessorBase<T extends BufferConfig>
   }
 
   private _flush() {
-    if (this._isFlushInProgress) {
+    if (this._flushInProgress) {
       return;
     }
-    this._isFlushInProgress = true;
     this._clearTimer();
-
     const spans = this._finishedSpans.splice(0, this._maxExportBatchSize);
-    this._export(spans)
+    this._flushInProgress = this._export(spans);
+    this._flushInProgress
       .then(() => {
-        this._isFlushInProgress = false;
+        this._flushInProgress = null;
         if (this._finishedSpans.length >= this._maxExportBatchSize) {
           this._flush();
         } else if (this._finishedSpans.length > 0) {
@@ -247,7 +249,7 @@ export abstract class BatchSpanProcessorBase<T extends BufferConfig>
         }
       })
       .catch(e => {
-        this._isFlushInProgress = false;
+        this._flushInProgress = null;
         globalErrorHandler(e);
         if (this._finishedSpans.length >= this._maxExportBatchSize) {
           this._flush();
