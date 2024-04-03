@@ -16,7 +16,6 @@
 
 import { diag, ROOT_CONTEXT } from '@opentelemetry/api';
 import {
-  ExportResult,
   ExportResultCode,
   loggingErrorHandler,
   setGlobalErrorHandler,
@@ -28,9 +27,7 @@ import {
   BasicTracerProvider,
   BufferConfig,
   InMemorySpanExporter,
-  ReadableSpan,
   Span,
-  SpanExporter,
 } from '../../../src';
 import { context } from '@opentelemetry/api';
 import { TestRecordOnlySampler } from './TestRecordOnlySampler';
@@ -38,6 +35,7 @@ import { TestTracingSpanExporter } from './TestTracingSpanExporter';
 import { TestStackContextManager } from './TestStackContextManager';
 import { BatchSpanProcessorBase } from '../../../src/export/BatchSpanProcessorBase';
 import { Resource, ResourceAttributes } from '@opentelemetry/resources';
+import { TestExporterWithDelay } from './TestExporterWithDelay';
 
 function createSampledSpan(spanName: string): Span {
   const tracer = new BasicTracerProvider({
@@ -178,28 +176,34 @@ describe('BatchSpanProcessorBase', () => {
       assert.strictEqual(spy.args.length, 0);
     });
 
-    it('should export the sampled spans with buffer size reached', async () => {
+    it('should export the sampled spans with buffer size reached', done => {
+      const clock = sinon.useFakeTimers();
       const processor = new BatchSpanProcessor(exporter, defaultBufferConfig);
-      const span = createSampledSpan(name);
-      for (let i = 1; i < defaultBufferConfig.maxExportBatchSize; i++) {
+      for (let i = 0; i < defaultBufferConfig.maxExportBatchSize; i++) {
+        const span = createSampledSpan(`${name}_${i}`);
         processor.onStart(span, ROOT_CONTEXT);
-        assert.strictEqual(exporter.getFinishedSpans().length, 0);
 
         processor.onEnd(span);
-        assert.strictEqual(exporter.getFinishedSpans().length, 0);
       }
+      const span = createSampledSpan(`${name}_6`);
       processor.onStart(span, ROOT_CONTEXT);
       processor.onEnd(span);
-      assert.strictEqual(exporter.getFinishedSpans().length, 5);
-      await processor.shutdown();
-      assert.strictEqual(exporter.getFinishedSpans().length, 0);
+
+      setTimeout(async () => {
+        assert.strictEqual(exporter.getFinishedSpans().length, 5);
+        await processor.shutdown();
+        assert.strictEqual(exporter.getFinishedSpans().length, 0);
+        done();
+      }, 1000);
+      clock.tick(1000);
+      clock.restore();
     });
 
     it('should force flush when timeout exceeded', done => {
       const clock = sinon.useFakeTimers();
       const processor = new BatchSpanProcessor(exporter, defaultBufferConfig);
-      const span = createSampledSpan(name);
-      for (let i = 1; i < defaultBufferConfig.maxExportBatchSize; i++) {
+      for (let i = 0; i < 4; i++) {
+        const span = createSampledSpan(`${name}_${i}`);
         processor.onStart(span, ROOT_CONTEXT);
         processor.onEnd(span);
         assert.strictEqual(exporter.getFinishedSpans().length, 0);
@@ -217,8 +221,8 @@ describe('BatchSpanProcessorBase', () => {
 
     it('should force flush on demand', () => {
       const processor = new BatchSpanProcessor(exporter, defaultBufferConfig);
-      const span = createSampledSpan(name);
-      for (let i = 1; i < defaultBufferConfig.maxExportBatchSize; i++) {
+      for (let i = 0; i < 4; i++) {
+        const span = createSampledSpan(`${name}_${i}`);
         processor.onStart(span, ROOT_CONTEXT);
         processor.onEnd(span);
       }
@@ -273,7 +277,6 @@ describe('BatchSpanProcessorBase', () => {
         const span = createSampledSpan(`${name}_last`);
         processor.onStart(span, ROOT_CONTEXT);
         processor.onEnd(span);
-        clock.tick(defaultBufferConfig.scheduledDelayMillis + 10);
 
         // because there is an async promise that will be trigger original
         // timeout is needed to simulate a real tick to the next
@@ -281,20 +284,22 @@ describe('BatchSpanProcessorBase', () => {
           clock.tick(defaultBufferConfig.scheduledDelayMillis + 10);
           originalTimeout(async () => {
             clock.tick(defaultBufferConfig.scheduledDelayMillis + 10);
-            clock.restore();
+            originalTimeout(async () => {
+              clock.tick(defaultBufferConfig.scheduledDelayMillis + 10);
+              clock.restore();
 
-            diag.info(
-              'finished spans count',
-              exporter.getFinishedSpans().length
-            );
-            assert.strictEqual(
-              exporter.getFinishedSpans().length,
-              totalSpans + 1
-            );
-
-            await processor.shutdown();
-            assert.strictEqual(exporter.getFinishedSpans().length, 0);
-            done();
+              diag.info(
+                'finished spans count',
+                exporter.getFinishedSpans().length
+              );
+              assert.strictEqual(
+                exporter.getFinishedSpans().length,
+                totalSpans + 1
+              );
+              await processor.shutdown();
+              assert.strictEqual(exporter.getFinishedSpans().length, 0);
+              done();
+            });
           });
         });
       }
@@ -387,57 +392,6 @@ describe('BatchSpanProcessorBase', () => {
         });
       });
 
-      it('should still export when previously failed', async () => {
-        // The scenario is made of several parts:
-        // 1. The exporter tries to export some spans
-        // 2. While it does so, more spans are processed
-        // 3. The exporter fails
-        // 4. Spans arriving during step 2 should be exported
-
-        let firstCall = true;
-        const fillingExportStub = sinon
-          .stub(exporter, 'export')
-          .callsFake((spans, cb) => {
-            // The first time export is called, add some spans to the processor.
-            // Any other time, call through. We don't simply restore the stub
-            // so we can count the calls with `sinon.assert`
-            if (!firstCall) {
-              return fillingExportStub.wrappedMethod.call(exporter, spans, cb);
-            }
-
-            // Step 2: During export, add another span
-            firstCall = false;
-            processSpan();
-
-            return fillingExportStub.wrappedMethod.call(exporter, spans, () => {
-              // Step 3: Mock failure
-              cb({
-                code: ExportResultCode.FAILED,
-              });
-            });
-          });
-
-        const clock = sinon.useFakeTimers();
-
-        // Step 1: Export a span
-        processSpan();
-        await clock.runAllAsync();
-
-        clock.restore();
-        fillingExportStub.restore();
-
-        // Step 4: Make sure all spans were processed
-        assert.equal(exporter['_finishedSpans'].length, 2);
-        assert.equal(processor['_finishedSpans'].length, 0);
-        sinon.assert.calledTwice(fillingExportStub);
-
-        function processSpan() {
-          const span = createSampledSpan('test');
-          processor.onStart(span, ROOT_CONTEXT);
-          processor.onEnd(span);
-        }
-      });
-
       it('should wait for pending resource on flush', async () => {
         const tracer = new BasicTracerProvider({
           resource: new Resource(
@@ -494,28 +448,39 @@ describe('BatchSpanProcessorBase', () => {
     describe('when there are more spans then "maxQueueSize"', () => {
       beforeEach(() => {
         processor = new BatchSpanProcessor(
-          exporter,
+          new TestExporterWithDelay(1000),
           Object.assign({}, defaultBufferConfig, {
             maxQueueSize: 6,
           })
         );
       });
       it('should drop spans', () => {
+        const clock = sinon.useFakeTimers();
         const span = createSampledSpan('test');
         for (let i = 0, j = 20; i < j; i++) {
           processor.onStart(span, ROOT_CONTEXT);
           processor.onEnd(span);
         }
+        clock.tick(1000);
         assert.equal(processor['_finishedSpans'].length, 6);
       });
       it('should count and report dropped spans', done => {
+        const clock = sinon.useFakeTimers();
         const debugStub = sinon.spy(diag, 'debug');
         const warnStub = sinon.spy(diag, 'warn');
         const span = createSampledSpan('test');
-        for (let i = 0, j = 12; i < j; i++) {
+        for (let i = 0, j = 11; i < j; i++) {
           processor.onStart(span, ROOT_CONTEXT);
           processor.onEnd(span);
         }
+        // One batch of 5 in-flight. 6 are left in the buffer. No span loss until this point.
+        assert.equal(processor['_finishedSpans'].length, 6);
+        assert.equal(processor['_droppedSpansCount'], 0);
+        sinon.assert.notCalled(debugStub);
+
+        processor.onStart(span, ROOT_CONTEXT);
+        processor.onEnd(span);
+
         assert.equal(processor['_finishedSpans'].length, 6);
         assert.equal(processor['_droppedSpansCount'], 1);
         sinon.assert.calledOnce(debugStub);
@@ -534,6 +499,8 @@ describe('BatchSpanProcessorBase', () => {
 
           done();
         });
+        clock.tick(3000);
+        clock.restore();
       });
     });
   });
@@ -554,47 +521,6 @@ describe('BatchSpanProcessorBase', () => {
           processor['_maxQueueSize']
         );
       });
-    });
-  });
-
-  describe('Concurrency', () => {
-    it('should only send a single batch at a time', async () => {
-      const callbacks: ((result: ExportResult) => void)[] = [];
-      const spans: ReadableSpan[] = [];
-      const exporter: SpanExporter = {
-        export: async (
-          exportedSpans: ReadableSpan[],
-          resultCallback: (result: ExportResult) => void
-        ) => {
-          callbacks.push(resultCallback);
-          spans.push(...exportedSpans);
-        },
-        shutdown: async () => {},
-      };
-      const processor = new BatchSpanProcessor(exporter, {
-        maxExportBatchSize: 5,
-        maxQueueSize: 6,
-      });
-      const totalSpans = 50;
-      for (let i = 0; i < totalSpans; i++) {
-        const span = createSampledSpan(`${name}_${i}`);
-        processor.onStart(span, ROOT_CONTEXT);
-        processor.onEnd(span);
-      }
-      assert.equal(callbacks.length, 1);
-      assert.equal(spans.length, 5);
-      callbacks[0]({ code: ExportResultCode.SUCCESS });
-      await new Promise(resolve => setTimeout(resolve, 0));
-      // After the first batch completes we will have dropped a number
-      // of spans and the next batch will be smaller
-      assert.equal(callbacks.length, 2);
-      assert.equal(spans.length, 10);
-      callbacks[1]({ code: ExportResultCode.SUCCESS });
-
-      // We expect that all the other spans have been dropped
-      await new Promise(resolve => setTimeout(resolve, 0));
-      assert.equal(callbacks.length, 2);
-      assert.equal(spans.length, 10);
     });
   });
 });

@@ -164,7 +164,7 @@ export abstract class InstrumentationBase<T = any>
       const version = require(path.join(baseDir, 'package.json')).version;
       return typeof version === 'string' ? version : undefined;
     } catch (error) {
-      diag.warn('Failed extracting version', baseDir);
+      diag.debug('Failed extracting version', baseDir);
     }
 
     return undefined;

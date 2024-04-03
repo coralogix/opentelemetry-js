@@ -199,7 +199,7 @@ describe('SimpleSpanProcessor', () => {
     });
 
     it('should await doExport() and delete from _unresolvedExports', async () => {
-      const testExporterWithDelay = new TestExporterWithDelay();
+      const testExporterWithDelay = new TestExporterWithDelay(1);
       const processor = new SimpleSpanProcessor(testExporterWithDelay);
 
       const providerWithAsyncResource = new BasicTracerProvider({
