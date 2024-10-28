@@ -26,8 +26,10 @@
       "experimental/packages/opentelemetry-sdk-node",
       "experimental/packages/otlp-exporter-base",
       "experimental/packages/otlp-grpc-exporter-base",
-      "experimental/packages/otlp-proto-exporter-base",
       "experimental/packages/otlp-transformer",
+      "experimental/packages/propagator-aws-xray-lambda",
+      "experimental/packages/sampler-jaeger-remote",
+      "experimental/packages/sdk-events",
       "experimental/packages/sdk-logs",
       "experimental/packages/shim-opencensus",
       "packages/opentelemetry-context-async-hooks",
@@ -42,9 +44,10 @@
       "packages/opentelemetry-sdk-trace-base",
       "packages/opentelemetry-sdk-trace-node",
       "packages/opentelemetry-sdk-trace-web",
-      "packages/opentelemetry-semantic-conventions",
       "packages/opentelemetry-shim-opentracing",
-      "packages/sdk-metrics"
+      "packages/propagator-aws-xray",
+      "packages/sdk-metrics",
+      "semantic-conventions"
     ],
     "out": "docs",
     "exclude": [
@@ -124,10 +127,16 @@
       "path": "experimental/packages/otlp-grpc-exporter-base"
     },
     {
-      "path": "experimental/packages/otlp-proto-exporter-base"
+      "path": "experimental/packages/otlp-transformer"
     },
     {
-      "path": "experimental/packages/otlp-transformer"
+      "path": "experimental/packages/propagator-aws-xray-lambda"
+    },
+    {
+      "path": "experimental/packages/sampler-jaeger-remote"
+    },
+    {
+      "path": "experimental/packages/sdk-events"
     },
     {
       "path": "experimental/packages/sdk-logs"
@@ -172,16 +181,19 @@
       "path": "packages/opentelemetry-sdk-trace-web"
     },
     {
-      "path": "packages/opentelemetry-semantic-conventions"
+      "path": "packages/opentelemetry-shim-opentracing"
     },
     {
-      "path": "packages/opentelemetry-shim-opentracing"
+      "path": "packages/propagator-aws-xray"
     },
     {
       "path": "packages/sdk-metrics"
     },
     {
       "path": "packages/template"
+    },
+    {
+      "path": "semantic-conventions"
     }
   ]
 }

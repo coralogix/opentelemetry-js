@@ -19,6 +19,7 @@ import { TimeInput } from '../common/Time';
 import { SpanAttributes, SpanAttributeValue } from './attributes';
 import { SpanContext } from './span_context';
 import { SpanStatus } from './status';
+import { Link } from './link';
 
 /**
  * An interface that represents a span. A span represents a single operation
@@ -28,6 +29,8 @@ import { SpanStatus } from './status';
  * may have children.
  *
  * Spans are created by the {@link Tracer.startSpan} method.
+ *
+ * @since 1.0.0
  */
 export interface Span {
   /**
@@ -75,6 +78,26 @@ export interface Span {
     attributesOrStartTime?: SpanAttributes | TimeInput,
     startTime?: TimeInput
   ): this;
+
+  /**
+   * Adds a single link to the span.
+   *
+   * Links added after the creation will not affect the sampling decision.
+   * It is preferred span links be added at span creation.
+   *
+   * @param link the link to add.
+   */
+  addLink(link: Link): this;
+
+  /**
+   * Adds multiple links to the span.
+   *
+   * Links added after the creation will not affect the sampling decision.
+   * It is preferred span links be added at span creation.
+   *
+   * @param links the links to add.
+   */
+  addLinks(links: Link[]): this;
 
   /**
    * Sets a status to the span. If used, this will override the default Span

@@ -27,6 +27,13 @@ interface ConsoleMetricExporterOptions {
   temporalitySelector?: AggregationTemporalitySelector;
 }
 
+/**
+ * This is an implementation of {@link PushMetricExporter} that prints metrics to the
+ * console. This class can be used for diagnostic purposes.
+ *
+ * NOTE: This {@link PushMetricExporter} is intended for diagnostics use only, output rendered to the console may change at any time.
+ */
+
 /* eslint-disable no-console */
 export class ConsoleMetricExporter implements PushMetricExporter {
   protected _shutdown = false;
@@ -71,11 +78,14 @@ export class ConsoleMetricExporter implements PushMetricExporter {
   ): void {
     for (const scopeMetrics of metrics.scopeMetrics) {
       for (const metric of scopeMetrics.metrics) {
-        console.dir({
-          descriptor: metric.descriptor,
-          dataPointType: metric.dataPointType,
-          dataPoints: metric.dataPoints,
-        });
+        console.dir(
+          {
+            descriptor: metric.descriptor,
+            dataPointType: metric.dataPointType,
+            dataPoints: metric.dataPoints,
+          },
+          { depth: null }
+        );
       }
     }
 

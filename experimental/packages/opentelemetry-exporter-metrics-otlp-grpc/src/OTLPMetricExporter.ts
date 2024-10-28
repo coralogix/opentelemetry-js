@@ -22,17 +22,16 @@ import { ResourceMetrics } from '@opentelemetry/sdk-metrics';
 import {
   OTLPGRPCExporterConfigNode,
   OTLPGRPCExporterNodeBase,
-  ServiceClientType,
   validateAndNormalizeUrl,
   DEFAULT_COLLECTOR_URL,
 } from '@opentelemetry/otlp-grpc-exporter-base';
 import { baggageUtils, getEnv } from '@opentelemetry/core';
-import { Metadata } from '@grpc/grpc-js';
 import {
-  createExportMetricsServiceRequest,
-  IExportMetricsServiceRequest,
+  IExportMetricsServiceResponse,
+  ProtobufMetricsSerializer,
 } from '@opentelemetry/otlp-transformer';
 import { VERSION } from './version';
+import { parseHeaders } from '@opentelemetry/otlp-exporter-base';
 
 const USER_AGENT = {
   'User-Agent': `OTel-OTLP-Exporter-JavaScript/${VERSION}`,
@@ -40,38 +39,27 @@ const USER_AGENT = {
 
 class OTLPMetricExporterProxy extends OTLPGRPCExporterNodeBase<
   ResourceMetrics,
-  IExportMetricsServiceRequest
+  IExportMetricsServiceResponse
 > {
   constructor(config?: OTLPGRPCExporterConfigNode & OTLPMetricExporterOptions) {
-    super(config);
-    const headers = {
+    const signalSpecificMetadata = {
       ...USER_AGENT,
       ...baggageUtils.parseKeyPairsIntoRecord(
         getEnv().OTEL_EXPORTER_OTLP_METRICS_HEADERS
       ),
-      ...config?.headers,
+      ...parseHeaders(config?.headers),
     };
-
-    this.metadata ||= new Metadata();
-    for (const [k, v] of Object.entries(headers)) {
-      this.metadata.set(k, v);
-    }
-  }
-
-  getServiceProtoPath(): string {
-    return 'opentelemetry/proto/collector/metrics/v1/metrics_service.proto';
-  }
-
-  getServiceClientType(): ServiceClientType {
-    return ServiceClientType.METRICS;
+    super(
+      config,
+      signalSpecificMetadata,
+      'MetricsExportService',
+      '/opentelemetry.proto.collector.metrics.v1.MetricsService/Export',
+      ProtobufMetricsSerializer
+    );
   }
 
   getDefaultUrl(config: OTLPGRPCExporterConfigNode): string {
     return validateAndNormalizeUrl(this.getUrlFromConfig(config));
-  }
-
-  convert(metrics: ResourceMetrics[]): IExportMetricsServiceRequest {
-    return createExportMetricsServiceRequest(metrics);
   }
 
   getUrlFromConfig(config: OTLPGRPCExporterConfigNode): string {
