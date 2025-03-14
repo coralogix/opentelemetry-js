@@ -19,6 +19,75 @@ For semantic convention package changes, see the [semconv CHANGELOG](packages/se
 
 ### :house: (Internal)
 
+## 1.30.1
+
+### :bug: (Bug Fix)
+
+* fix(sdk-metrics): do not export from `PeriodicExportingMetricReader` when there are no metrics to export. [#5288](https://github.com/open-telemetry/opentelemetry-js/pull/5288) @jacksonweber
+
+### :house: (Internal)
+
+* ci: make changelog workflow check v1.x [#5338](https://github.com/open-telemetry/opentelemetry-js/pull/5338) @pichlermarc
+
+## 1.30.0
+
+### :rocket: (Enhancement)
+
+* feat(sdk-metrics): PeriodicExportingMetricReader now flushes pending tasks at shutdown [#5242](https://github.com/open-telemetry/opentelemetry-js/pull/5242)
+
+### :bug: (Bug Fix)
+
+* fix(sdk-trace-base): do not load OTEL_ env vars on module load, but when needed [#5233](https://github.com/open-telemetry/opentelemetry-js/pull/5233)
+* fix(instrumentation-xhr, instrumentation-fetch): content length attributes no longer get removed with `ignoreNetworkEvents: true` being set [#5229](https://github.com/open-telemetry/opentelemetry-js/issues/5229)
+
+## 1.29.0
+
+### :rocket: (Enhancement)
+
+* feat(sdk-metrics): Add support for aggregation cardinality limit with a default limit of 2000. This limit can be customized via views [#5128](https://github.com/open-telemetry/opentelemetry-js/pull/5128)
+
+## 1.28.0
+
+### :rocket: (Enhancement)
+
+* feat(sdk-metrics, sdk-trace): add `mergeResourceWithDefaults` flag, which allows opting-out of resources getting merged with the default resource [#4617](https://github.com/open-telemetry/opentelemetry-js/pull/4617)
+  * default: `true` (no change in behavior)
+  * note: `false` will become the default behavior in the next major version in order to comply with [specification requirements](https://github.com/open-telemetry/opentelemetry-specification/blob/f3511a5ccda376dfd1de76dfa086fc9b35b54757/specification/resource/sdk.md?plain=1#L31-L36)
+
+* feat(sdk-trace-base): add `spanProcessors` property in `TracerConfig` interface. [#5138](https://github.com/open-telemetry/opentelemetry-js/pull/5138) @david-luna
+
+### :bug: (Bug Fix)
+
+* fix(sdk-metrics): await exports in `PeriodicExportingMetricReader` when async resource attributes have not yet settled [#5119](https://github.com/open-telemetry/opentelemetry-js/pull/5119/) @pichlermarc
+* fix(sdk-trace): performance.now() may return the same value for consecutive calls [#5150](https://github.com/open-telemetry/opentelemetry-js/pull/5150) @dyladan
+* fix(sdk-trace-base): pass BatchSpanProcessor#forceFlush() errors on visibilitychange/pagehide to globalErrorHandler [#5143](https://github.com/open-telemetry/opentelemetry-js/pull/5143) @pichlermarc
+  * fixes a bug where switching browser tabs with a failing exporter would cause an unhandled error
+
+## 1.27.0
+
+### :rocket: (Enhancement)
+
+* feat: add processors for adding session.id attribute to spans and logs [#4972](https://github.com/open-telemetry/opentelemetry-js/pull/4972)
+
+### :bug: (Bug Fix)
+
+* fix(sdk-trace-base): avoid keeping non-string `status.message` on `Span#setStatus()` [#4999](https://github.com/open-telemetry/opentelemetry-js/pull/4999) @pichlermarc
+* fix(sdk-metrics): Add missing catch and handle error in promise of `PeriodicExportingMetricReader` [#5006](https://github.com/open-telemetry/opentelemetry-js/pull/5006) @jj22ee
+* fix(opentelemetry-core): confusing log extract of composite propagator [#5017](https://github.com/open-telemetry/opentelemetry-js/pull/5017) @rv2673
+* fix(propagator-aws-xray-*): move propagators back to contrib repository [#4966](https://github.com/open-telemetry/opentelemetry-js/pull/4966) @pichlermarc
+  * The [specification](https://github.com/open-telemetry/opentelemetry-specification/blob/6672dbc97ddeb34f36c020a0f0a30323c8bc4d95/specification/context/api-propagators.md?plain=1#L354-L356) prohibits hosting these packages in the core repository
+  * `@opentelemetry/propagator-aws-xray` is now located in [open-telemetry/opentelemetry-js-contrib](https://github.com/open-telemetry/opentelemetry-js-contrib)
+  * `@opentelemetry/propagator-aws-xray-lambda` is now located in [open-telemetry/opentelemetry-js-contrib](https://github.com/open-telemetry/opentelemetry-js-contrib)
+
+### :house: (Internal)
+
+* deps: set `@opentelemetry/api` dependency min version to 1.3.0 in `examples`, `experimental/packages`, `integration-tests` and `selenium-tests`
+  [#4992](https://github.com/open-telemetry/opentelemetry-js/pull/4992)
+* refactor(sdk-metrics): replace `MetricsAttributes` with `Attributes` [#5021](https://github.com/open-telemetry/opentelemetry-js/pull/5021) @david-luna
+* refactor(instrumentation-http): replace `SpanAttributes` and `MetricsAttributes` with `Attributes` [#5023](https://github.com/open-telemetry/opentelemetry-js/pull/5023) @david-luna
+* chore(exporter-zipkin): remove usages of Span constructor [#5030](https://github.com/open-telemetry/opentelemetry-js/pull/5030) @david-luna
+* test(instrumentation-http): remove usages of `new Span` in tests [#5035](https://github.com/open-telemetry/opentelemetry-js/pull/5035) @david-luna
+
 ## 1.26.0
 
 ### :rocket: (Enhancement)
@@ -97,6 +166,7 @@ For semantic convention package changes, see the [semconv CHANGELOG](packages/se
 * fix(resources): prevent circular import (resource -> detector -> resource -> ...) [#4653](https://github.com/open-telemetry/opentelemetry-js/pull/4653) @pichlermarc
   * fixes a circular import warning which would appear in rollup when bundling `@opentelemetry/resources`
 * fix(exporter-metrics-otlp-grpc): add explicit otlp-exporter-base dependency to exporter-metrics-otlp-grpc [#4678](https://github.com/open-telemetry/opentelemetry-js/pull/4678) @AkselAllas
+* fix(resources) wait for async attributes for detecting resources [#4687](https://github.com/open-telemetry/opentelemetry-js/pull/4687) @ziolekjj
 
 ## 1.24.0
 

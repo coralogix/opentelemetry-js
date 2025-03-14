@@ -37,8 +37,9 @@ jobs:
           git remote show origin
           git remote add upstream https://github.com/open-telemetry/opentelemetry-js.git
           git fetch upstream
-          git reset --hard upstream/main
-          git push origin main --force
+          git checkout v1.x
+          git reset --hard upstream/v1.x
+          git push origin v1.x --force
 
       - uses: actions/setup-node@v4
         with:

@@ -30,7 +30,8 @@ import {
   merge,
 } from '@opentelemetry/core';
 import { IResource, Resource } from '@opentelemetry/resources';
-import { SpanProcessor, Tracer } from '.';
+import { SpanProcessor } from './SpanProcessor';
+import { Tracer } from './Tracer';
 import { loadDefaultConfig } from './config';
 import { MultiSpanProcessor } from './MultiSpanProcessor';
 import { NoopSpanProcessor } from './export/NoopSpanProcessor';
@@ -80,17 +81,28 @@ export class BasicTracerProvider implements TracerProvider {
       reconfigureLimits(config)
     );
     this.resource = mergedConfig.resource ?? Resource.empty();
-    this.resource = Resource.default().merge(this.resource);
+
+    if (mergedConfig.mergeResourceWithDefaults) {
+      this.resource = Resource.default().merge(this.resource);
+    }
+
     this._config = Object.assign({}, mergedConfig, {
       resource: this.resource,
     });
 
-    const defaultExporter = this._buildExporterFromEnv();
-    if (defaultExporter !== undefined) {
-      const batchProcessor = new BatchSpanProcessor(defaultExporter);
-      this.activeSpanProcessor = batchProcessor;
+    if (config.spanProcessors?.length) {
+      this._registeredSpanProcessors = [...config.spanProcessors];
+      this.activeSpanProcessor = new MultiSpanProcessor(
+        this._registeredSpanProcessors
+      );
     } else {
-      this.activeSpanProcessor = new NoopSpanProcessor();
+      const defaultExporter = this._buildExporterFromEnv();
+      if (defaultExporter !== undefined) {
+        const batchProcessor = new BatchSpanProcessor(defaultExporter);
+        this.activeSpanProcessor = batchProcessor;
+      } else {
+        this.activeSpanProcessor = new NoopSpanProcessor();
+      }
     }
   }
 
@@ -116,6 +128,7 @@ export class BasicTracerProvider implements TracerProvider {
   }
 
   /**
+   * @deprecated please use {@link TracerConfig} spanProcessors property
    * Adds a new {@link SpanProcessor} to this tracer.
    * @param spanProcessor the new SpanProcessor to be added.
    */

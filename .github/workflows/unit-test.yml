@@ -16,7 +16,7 @@ jobs:
           - "16"
           - "18"
           - "20"
-          - "22.6" # temp until 22.8 is released (bug in 22.7)
+          - "22"
     runs-on: ubuntu-latest
     env:
       NPM_CONFIG_UNSAFE_PERM: true
@@ -32,11 +32,15 @@ jobs:
           node-version: ${{ matrix.node_version }}
 
       - run: npm install -g npm@latest
-        if: ${{ matrix.node_version == '18' || matrix.node_version == '20' || matrix.node_version == '22' }}
+        if: ${{ matrix.node_version == '20' || matrix.node_version == '22' }}
 
       # npm@10.0.0 drops support for Node.js v14 and v16
       - run: npm install -g npm@"<10.0.0"
         if: ${{ matrix.node_version == '14' || matrix.node_version == '16' }}
+
+      # npm@11.0.0 drops support for Node.js v18
+      - run: npm install -g npm@"<11.0.0"
+        if: ${{ matrix.node_version == '18'}}
 
       - name: Bootstrap
         run: npm ci
@@ -45,15 +49,13 @@ jobs:
         run: npm run compile
 
       - name: Unit tests
-        run: |
-          # TODO(legendecas): webpack https://stackoverflow.com/questions/69692842/error-message-error0308010cdigital-envelope-routinesunsupported
-          if [ "${{ matrix.node_version }}" = "18" ] || [ "${{ matrix.node_version }}" == "20" ] || [ "${{ matrix.node_version }}" == "22" ]; then
-            export NODE_OPTIONS=--openssl-legacy-provider
-          fi
-          npm run test
+        run: npm run test
       - name: Report Coverage
-        run: npm run codecov
-        if: ${{ matrix.node_version == '14' }}
+        uses: codecov/codecov-action@v5
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        with:
+          verbose: true
   node-windows-tests:
     runs-on: windows-latest
     env:
@@ -67,7 +69,7 @@ jobs:
           cache: 'npm'
           cache-dependency-path: |
             package-lock.json
-          node-version: '18'
+          node-version: '20'
 
       - run: npm install -g npm@latest
 
@@ -80,8 +82,6 @@ jobs:
           npm run compile
 
       - name: Unit tests
-        env:
-         NODE_OPTIONS: --openssl-legacy-provider
         run: npm run test
   browser-tests:
     runs-on: ubuntu-latest
@@ -96,7 +96,7 @@ jobs:
           cache: 'npm'
           cache-dependency-path: |
             package-lock.json
-          node-version: 16
+          node-version: 22
 
       - name: Bootstrap
         run: npm ci
@@ -107,7 +107,11 @@ jobs:
       - name: Unit tests
         run: npm run test:browser
       - name: Report Coverage
-        run: npm run codecov:browser
+        uses: codecov/codecov-action@v5
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        with:
+          verbose: true
   webworker-tests:
     runs-on: ubuntu-latest
     env:
@@ -120,7 +124,7 @@ jobs:
           cache: 'npm'
           cache-dependency-path: |
             package-lock.json
-          node-version: 16
+          node-version: 22
 
       - name: Bootstrap
         run: npm ci
@@ -131,7 +135,11 @@ jobs:
       - name: Unit tests
         run: npm run test:webworker
       - name: Report Coverage
-        run: npm run codecov:webworker
+        uses: codecov/codecov-action@v5
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+        with:
+          verbose: true
   api-eol-node-test:
     strategy:
       fail-fast: false
