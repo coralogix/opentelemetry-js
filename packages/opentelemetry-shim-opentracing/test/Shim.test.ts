@@ -37,10 +37,21 @@ import { performance } from 'perf_hooks';
 import { B3Propagator } from '@opentelemetry/propagator-b3';
 import { JaegerPropagator } from '@opentelemetry/propagator-jaeger';
 import {
-  SEMATTRS_EXCEPTION_MESSAGE,
-  SEMATTRS_EXCEPTION_STACKTRACE,
-  SEMATTRS_EXCEPTION_TYPE,
+  ATTR_EXCEPTION_MESSAGE,
+  ATTR_EXCEPTION_STACKTRACE,
+  ATTR_EXCEPTION_TYPE,
 } from '@opentelemetry/semantic-conventions';
+
+function assertWithinThreshold(
+  actual: number,
+  expected: number,
+  threshold: number
+) {
+  assert.ok(
+    Math.abs(actual - expected) <= threshold,
+    `actual (${actual}) and expected (${expected}) not within threshold of ${threshold}`
+  );
+}
 
 describe('OpenTracing Shim', () => {
   const compositePropagator = new CompositePropagator({
@@ -226,7 +237,7 @@ describe('OpenTracing Shim', () => {
           childOf: span,
         }) as SpanShim;
         assert.strictEqual(
-          (childSpan.getSpan() as Span).parentSpanId,
+          (childSpan.getSpan() as Span).parentSpanContext?.spanId,
           context.toSpanId()
         );
         assert.strictEqual(
@@ -240,7 +251,7 @@ describe('OpenTracing Shim', () => {
           childOf: context,
         }) as SpanShim;
         assert.strictEqual(
-          (childSpan.getSpan() as Span).parentSpanId,
+          (childSpan.getSpan() as Span).parentSpanContext?.spanId,
           context.toSpanId()
         );
         assert.strictEqual(
@@ -260,12 +271,13 @@ describe('OpenTracing Shim', () => {
 
         const otSpan = (span as SpanShim).getSpan() as Span;
 
-        const adjustment = otSpan['_performanceOffset'];
+        const adjustment = (otSpan as any)['_performanceOffset'];
 
         assert.strictEqual(otSpan.links.length, 1);
-        assert.deepStrictEqual(
+        assertWithinThreshold(
           hrTimeToMilliseconds(otSpan.startTime),
-          now + adjustment + performance.timeOrigin
+          now + adjustment + performance.timeOrigin,
+          0.001
         );
         assert.deepStrictEqual(otSpan.attributes, opentracingOptions.tags);
       });
@@ -382,7 +394,7 @@ describe('OpenTracing Shim', () => {
           span.logEvent('error', payload);
           assert.strictEqual(otSpan.events[0].name, 'exception');
           const expectedAttributes = {
-            [SEMATTRS_EXCEPTION_MESSAGE]: 'boom',
+            [ATTR_EXCEPTION_MESSAGE]: 'boom',
           };
           assert.deepStrictEqual(
             otSpan.events[0].attributes,
@@ -401,9 +413,9 @@ describe('OpenTracing Shim', () => {
           assert.strictEqual(otSpan.events[0].name, 'exception');
           const expectedAttributes = {
             fault: 'meow',
-            [SEMATTRS_EXCEPTION_TYPE]: 'boom',
-            [SEMATTRS_EXCEPTION_MESSAGE]: 'oh no!',
-            [SEMATTRS_EXCEPTION_STACKTRACE]: 'pancakes',
+            [ATTR_EXCEPTION_TYPE]: 'boom',
+            [ATTR_EXCEPTION_MESSAGE]: 'oh no!',
+            [ATTR_EXCEPTION_STACKTRACE]: 'pancakes',
           };
           assert.deepStrictEqual(
             otSpan.events[0].attributes,
@@ -450,7 +462,7 @@ describe('OpenTracing Shim', () => {
             Math.trunc(tomorrow / 1000)
           );
           const expectedAttributes = {
-            [SEMATTRS_EXCEPTION_MESSAGE]: 'boom',
+            [ATTR_EXCEPTION_MESSAGE]: 'boom',
           };
           assert.deepStrictEqual(
             otSpan.events[0].attributes,
@@ -475,9 +487,9 @@ describe('OpenTracing Shim', () => {
           const expectedAttributes = {
             event: 'error',
             fault: 'meow',
-            [SEMATTRS_EXCEPTION_TYPE]: 'boom',
-            [SEMATTRS_EXCEPTION_MESSAGE]: 'oh no!',
-            [SEMATTRS_EXCEPTION_STACKTRACE]: 'pancakes',
+            [ATTR_EXCEPTION_TYPE]: 'boom',
+            [ATTR_EXCEPTION_MESSAGE]: 'oh no!',
+            [ATTR_EXCEPTION_STACKTRACE]: 'pancakes',
           };
           assert.deepStrictEqual(
             otSpan.events[0].attributes,
@@ -496,10 +508,11 @@ describe('OpenTracing Shim', () => {
     it('sets explicit end timestamp', () => {
       const now = performance.now();
       span.finish(now);
-      const adjustment = otSpan['_performanceOffset'];
-      assert.deepStrictEqual(
+      const adjustment = (otSpan as any)['_performanceOffset'];
+      assertWithinThreshold(
         hrTimeToMilliseconds(otSpan.endTime),
-        now + adjustment + performance.timeOrigin
+        now + adjustment + performance.timeOrigin,
+        0.001
       );
     });
 

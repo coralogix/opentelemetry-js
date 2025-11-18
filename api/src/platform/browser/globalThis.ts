@@ -25,7 +25,7 @@
  */
 
 /** only globals that common to node and browsers are allowed */
-// eslint-disable-next-line node/no-unsupported-features/es-builtins, no-undef
+// eslint-disable-next-line n/no-unsupported-features/es-builtins, no-undef
 export const _globalThis: typeof globalThis =
   typeof globalThis === 'object'
     ? globalThis
@@ -34,5 +34,5 @@ export const _globalThis: typeof globalThis =
       : typeof window === 'object'
         ? window
         : typeof global === 'object'
-          ? global
+          ? (global as unknown as typeof globalThis)
           : ({} as typeof globalThis);

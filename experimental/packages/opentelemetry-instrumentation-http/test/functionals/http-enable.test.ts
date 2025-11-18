@@ -23,6 +23,7 @@ import {
   trace,
   Attributes,
   DiagConsoleLogger,
+  INVALID_SPAN_CONTEXT,
 } from '@opentelemetry/api';
 import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
 import {
@@ -43,25 +44,26 @@ import {
   ATTR_URL_PATH,
   ATTR_URL_SCHEME,
   HTTP_REQUEST_METHOD_VALUE_GET,
-  NETTRANSPORTVALUES_IP_TCP,
-  SEMATTRS_HTTP_CLIENT_IP,
-  SEMATTRS_HTTP_FLAVOR,
-  SEMATTRS_HTTP_HOST,
-  SEMATTRS_HTTP_METHOD,
-  SEMATTRS_HTTP_RESPONSE_CONTENT_LENGTH_UNCOMPRESSED,
-  SEMATTRS_HTTP_ROUTE,
-  SEMATTRS_HTTP_SCHEME,
-  SEMATTRS_HTTP_STATUS_CODE,
-  SEMATTRS_HTTP_TARGET,
-  SEMATTRS_HTTP_URL,
-  SEMATTRS_NET_HOST_IP,
-  SEMATTRS_NET_HOST_NAME,
-  SEMATTRS_NET_HOST_PORT,
-  SEMATTRS_NET_PEER_IP,
-  SEMATTRS_NET_PEER_NAME,
-  SEMATTRS_NET_PEER_PORT,
-  SEMATTRS_NET_TRANSPORT,
 } from '@opentelemetry/semantic-conventions';
+import {
+  ATTR_HTTP_CLIENT_IP,
+  ATTR_HTTP_FLAVOR,
+  ATTR_HTTP_HOST,
+  ATTR_HTTP_METHOD,
+  ATTR_HTTP_RESPONSE_CONTENT_LENGTH_UNCOMPRESSED,
+  ATTR_HTTP_SCHEME,
+  ATTR_HTTP_STATUS_CODE,
+  ATTR_HTTP_TARGET,
+  ATTR_HTTP_URL,
+  ATTR_NET_HOST_IP,
+  ATTR_NET_HOST_NAME,
+  ATTR_NET_HOST_PORT,
+  ATTR_NET_PEER_IP,
+  ATTR_NET_PEER_NAME,
+  ATTR_NET_PEER_PORT,
+  ATTR_NET_TRANSPORT,
+  NET_TRANSPORT_VALUE_IP_TCP,
+} from '../../src/semconv';
 import * as assert from 'assert';
 import * as nock from 'nock';
 import * as path from 'path';
@@ -78,7 +80,7 @@ import type {
   ServerResponse,
   RequestOptions,
 } from 'http';
-import { isWrapped } from '@opentelemetry/instrumentation';
+import { isWrapped, SemconvStability } from '@opentelemetry/instrumentation';
 import { getRPCMetadata, RPCType } from '@opentelemetry/core';
 
 const instrumentation = new HttpInstrumentation();
@@ -88,7 +90,6 @@ instrumentation.disable();
 import * as http from 'http';
 import { AttributeNames } from '../../src/enums/AttributeNames';
 import { getRemoteClientAddress } from '../../src/utils';
-import { SemconvStability } from '../../src/internal-types';
 
 const applyCustomAttributesOnSpanErrorMessage =
   'bad applyCustomAttributesOnSpan function';
@@ -100,8 +101,9 @@ const hostname = 'localhost';
 const pathname = '/test';
 const serverName = 'my.server.name';
 const memoryExporter = new InMemorySpanExporter();
-const provider = new NodeTracerProvider();
-provider.addSpanProcessor(new SimpleSpanProcessor(memoryExporter));
+const provider = new NodeTracerProvider({
+  spanProcessors: [new SimpleSpanProcessor(memoryExporter)],
+});
 instrumentation.setTracerProvider(provider);
 
 function doNock(
@@ -233,12 +235,31 @@ describe('HttpInstrumentation', () => {
         assertSpan(incomingSpan, SpanKind.SERVER, validations);
         assertSpan(outgoingSpan, SpanKind.CLIENT, validations);
         assert.strictEqual(
-          incomingSpan.attributes[SEMATTRS_NET_HOST_PORT],
+          incomingSpan.attributes[ATTR_NET_HOST_PORT],
           serverPort
         );
         assert.strictEqual(
-          outgoingSpan.attributes[SEMATTRS_NET_PEER_PORT],
+          outgoingSpan.attributes[ATTR_NET_PEER_PORT],
           serverPort
+        );
+      });
+
+      it('should redact auth from the `http.url` attribute (client side and server side)', async () => {
+        await httpRequest.get(
+          `${protocol}://user:pass@${hostname}:${serverPort}${pathname}`
+        );
+        const spans = memoryExporter.getFinishedSpans();
+        const [incomingSpan, outgoingSpan] = spans;
+        assert.strictEqual(spans.length, 2);
+        assert.strictEqual(incomingSpan.kind, SpanKind.SERVER);
+        assert.strictEqual(outgoingSpan.kind, SpanKind.CLIENT);
+        assert.strictEqual(
+          incomingSpan.attributes[ATTR_HTTP_URL],
+          `${protocol}://${hostname}:${serverPort}${pathname}`
+        );
+        assert.strictEqual(
+          outgoingSpan.attributes[ATTR_HTTP_URL],
+          `${protocol}://REDACTED:REDACTED@${hostname}:${serverPort}${pathname}`
         );
       });
     });
@@ -399,25 +420,25 @@ describe('HttpInstrumentation', () => {
 
         assert.strictEqual(spans.length, 2);
         assert.strictEqual(
-          incomingSpan.attributes[SEMATTRS_HTTP_CLIENT_IP],
+          incomingSpan.attributes[ATTR_HTTP_CLIENT_IP],
           '<client>'
         );
         assert.strictEqual(
-          incomingSpan.attributes[SEMATTRS_NET_HOST_PORT],
+          incomingSpan.attributes[ATTR_NET_HOST_PORT],
           serverPort
         );
         assert.strictEqual(
-          outgoingSpan.attributes[SEMATTRS_NET_PEER_PORT],
+          outgoingSpan.attributes[ATTR_NET_PEER_PORT],
           serverPort
         );
         [
           { span: incomingSpan, kind: SpanKind.SERVER },
           { span: outgoingSpan, kind: SpanKind.CLIENT },
         ].forEach(({ span, kind }) => {
-          assert.strictEqual(span.attributes[SEMATTRS_HTTP_FLAVOR], '1.1');
+          assert.strictEqual(span.attributes[ATTR_HTTP_FLAVOR], '1.1');
           assert.strictEqual(
-            span.attributes[SEMATTRS_NET_TRANSPORT],
-            NETTRANSPORTVALUES_IP_TCP
+            span.attributes[ATTR_NET_TRANSPORT],
+            NET_TRANSPORT_VALUE_IP_TCP
           );
           assertSpan(span, kind, validations);
         });
@@ -430,7 +451,7 @@ describe('HttpInstrumentation', () => {
         const span = memoryExporter.getFinishedSpans()[0];
 
         assert.strictEqual(span.kind, SpanKind.SERVER);
-        assert.strictEqual(span.attributes[SEMATTRS_HTTP_ROUTE], 'TheRoute');
+        assert.strictEqual(span.attributes[ATTR_HTTP_ROUTE], 'TheRoute');
         assert.strictEqual(span.name, 'GET TheRoute');
       });
 
@@ -848,7 +869,7 @@ describe('HttpInstrumentation', () => {
             const [span] = spans;
             assert.strictEqual(spans.length, 1);
             assert.ok(Object.keys(span.attributes).length > 6);
-            assert.strictEqual(span.attributes[SEMATTRS_HTTP_STATUS_CODE], 404);
+            assert.strictEqual(span.attributes[ATTR_HTTP_STATUS_CODE], 404);
             assert.strictEqual(span.status.code, SpanStatusCode.ERROR);
             done();
           });
@@ -1142,6 +1163,20 @@ describe('HttpInstrumentation', () => {
         });
       });
 
+      it('should redact auth from the `url.full` attribute (client side and server side)', async () => {
+        await httpRequest.get(
+          `${protocol}://user:pass@${hostname}:${serverPort}${pathname}`
+        );
+        const spans = memoryExporter.getFinishedSpans();
+        const [_, outgoingSpan] = spans;
+        assert.strictEqual(spans.length, 2);
+        assert.strictEqual(outgoingSpan.kind, SpanKind.CLIENT);
+        assert.strictEqual(
+          outgoingSpan.attributes[ATTR_URL_FULL],
+          `${protocol}://REDACTED:REDACTED@${hostname}:${serverPort}${pathname}`
+        );
+      });
+
       it('should generate semconv 1.27 server spans with route when RPC metadata is available', async () => {
         const response = await httpRequest.get(
           `${protocol}://${hostname}:${serverPort}${pathname}/setroute`
@@ -1221,18 +1256,18 @@ describe('HttpInstrumentation', () => {
           [ATTR_NETWORK_PROTOCOL_VERSION]: '1.1',
 
           // 1.7 attributes
-          [SEMATTRS_HTTP_FLAVOR]: '1.1',
-          [SEMATTRS_HTTP_HOST]: `${hostname}:${serverPort}`,
-          [SEMATTRS_HTTP_METHOD]: 'GET',
-          [SEMATTRS_HTTP_RESPONSE_CONTENT_LENGTH_UNCOMPRESSED]:
+          [ATTR_HTTP_FLAVOR]: '1.1',
+          [ATTR_HTTP_HOST]: `${hostname}:${serverPort}`,
+          [ATTR_HTTP_METHOD]: 'GET',
+          [ATTR_HTTP_RESPONSE_CONTENT_LENGTH_UNCOMPRESSED]:
             response.data.length,
-          [SEMATTRS_HTTP_STATUS_CODE]: 200,
-          [SEMATTRS_HTTP_TARGET]: '/test',
-          [SEMATTRS_HTTP_URL]: `http://${hostname}:${serverPort}${pathname}`,
-          [SEMATTRS_NET_PEER_IP]: response.address,
-          [SEMATTRS_NET_PEER_NAME]: hostname,
-          [SEMATTRS_NET_PEER_PORT]: serverPort,
-          [SEMATTRS_NET_TRANSPORT]: 'ip_tcp',
+          [ATTR_HTTP_STATUS_CODE]: 200,
+          [ATTR_HTTP_TARGET]: '/test',
+          [ATTR_HTTP_URL]: `http://${hostname}:${serverPort}${pathname}`,
+          [ATTR_NET_PEER_IP]: response.address,
+          [ATTR_NET_PEER_NAME]: hostname,
+          [ATTR_NET_PEER_PORT]: serverPort,
+          [ATTR_NET_TRANSPORT]: 'ip_tcp',
 
           // unspecified old names
           [AttributeNames.HTTP_STATUS_TEXT]: 'OK',
@@ -1263,19 +1298,19 @@ describe('HttpInstrumentation', () => {
           [ATTR_URL_SCHEME]: protocol,
 
           // 1.7 attributes
-          [SEMATTRS_HTTP_FLAVOR]: '1.1',
-          [SEMATTRS_HTTP_HOST]: `${hostname}:${serverPort}`,
-          [SEMATTRS_HTTP_METHOD]: 'GET',
-          [SEMATTRS_HTTP_SCHEME]: protocol,
-          [SEMATTRS_HTTP_STATUS_CODE]: 200,
-          [SEMATTRS_HTTP_TARGET]: '/test',
-          [SEMATTRS_HTTP_URL]: `http://${hostname}:${serverPort}${pathname}`,
-          [SEMATTRS_NET_TRANSPORT]: 'ip_tcp',
-          [SEMATTRS_NET_HOST_IP]: body.address,
-          [SEMATTRS_NET_HOST_NAME]: hostname,
-          [SEMATTRS_NET_HOST_PORT]: serverPort,
-          [SEMATTRS_NET_PEER_IP]: body.address,
-          [SEMATTRS_NET_PEER_PORT]: response.clientRemotePort,
+          [ATTR_HTTP_FLAVOR]: '1.1',
+          [ATTR_HTTP_HOST]: `${hostname}:${serverPort}`,
+          [ATTR_HTTP_METHOD]: 'GET',
+          [ATTR_HTTP_SCHEME]: protocol,
+          [ATTR_HTTP_STATUS_CODE]: 200,
+          [ATTR_HTTP_TARGET]: '/test',
+          [ATTR_HTTP_URL]: `http://${hostname}:${serverPort}${pathname}`,
+          [ATTR_NET_TRANSPORT]: 'ip_tcp',
+          [ATTR_NET_HOST_IP]: body.address,
+          [ATTR_NET_HOST_NAME]: hostname,
+          [ATTR_NET_HOST_PORT]: serverPort,
+          [ATTR_NET_PEER_IP]: body.address,
+          [ATTR_NET_PEER_PORT]: response.clientRemotePort,
 
           // unspecified old names
           [AttributeNames.HTTP_STATUS_TEXT]: 'OK',
@@ -1307,19 +1342,19 @@ describe('HttpInstrumentation', () => {
           [ATTR_HTTP_ROUTE]: 'TheRoute',
 
           // 1.7 attributes
-          [SEMATTRS_HTTP_FLAVOR]: '1.1',
-          [SEMATTRS_HTTP_HOST]: `${hostname}:${serverPort}`,
-          [SEMATTRS_HTTP_METHOD]: 'GET',
-          [SEMATTRS_HTTP_SCHEME]: protocol,
-          [SEMATTRS_HTTP_STATUS_CODE]: 200,
-          [SEMATTRS_HTTP_TARGET]: `${pathname}/setroute`,
-          [SEMATTRS_HTTP_URL]: `http://${hostname}:${serverPort}${pathname}/setroute`,
-          [SEMATTRS_NET_TRANSPORT]: 'ip_tcp',
-          [SEMATTRS_NET_HOST_IP]: body.address,
-          [SEMATTRS_NET_HOST_NAME]: hostname,
-          [SEMATTRS_NET_HOST_PORT]: serverPort,
-          [SEMATTRS_NET_PEER_IP]: body.address,
-          [SEMATTRS_NET_PEER_PORT]: response.clientRemotePort,
+          [ATTR_HTTP_FLAVOR]: '1.1',
+          [ATTR_HTTP_HOST]: `${hostname}:${serverPort}`,
+          [ATTR_HTTP_METHOD]: 'GET',
+          [ATTR_HTTP_SCHEME]: protocol,
+          [ATTR_HTTP_STATUS_CODE]: 200,
+          [ATTR_HTTP_TARGET]: `${pathname}/setroute`,
+          [ATTR_HTTP_URL]: `http://${hostname}:${serverPort}${pathname}/setroute`,
+          [ATTR_NET_TRANSPORT]: 'ip_tcp',
+          [ATTR_NET_HOST_IP]: body.address,
+          [ATTR_NET_HOST_NAME]: hostname,
+          [ATTR_NET_HOST_PORT]: serverPort,
+          [ATTR_NET_PEER_IP]: body.address,
+          [ATTR_NET_PEER_PORT]: response.clientRemotePort,
 
           // unspecified old names
           [AttributeNames.HTTP_STATUS_TEXT]: 'OK',
@@ -1368,10 +1403,10 @@ describe('HttpInstrumentation', () => {
         const result = await httpRequest.get(
           `${protocol}://${hostname}:${serverPort}${testPath}`
         );
-        assert(
+        assert.ok(
           result.reqHeaders[DummyPropagation.TRACE_CONTEXT_KEY] !== undefined
         );
-        assert(
+        assert.ok(
           result.reqHeaders[DummyPropagation.SPAN_CONTEXT_KEY] !== undefined
         );
         const spans = memoryExporter.getFinishedSpans();
@@ -1392,10 +1427,10 @@ describe('HttpInstrumentation', () => {
         const result = await httpRequest.get(
           `${protocol}://${hostname}:${serverPort}${testPath}`
         );
-        assert(
+        assert.ok(
           result.reqHeaders[DummyPropagation.TRACE_CONTEXT_KEY] !== undefined
         );
-        assert(
+        assert.ok(
           result.reqHeaders[DummyPropagation.SPAN_CONTEXT_KEY] !== undefined
         );
         const spans = memoryExporter.getFinishedSpans();
@@ -1404,6 +1439,24 @@ describe('HttpInstrumentation', () => {
           spans.every(span => span.kind === SpanKind.CLIENT),
           true
         );
+      });
+
+      it('should not trace with INVALID_SPAN_CONTEXT parent with requireParent options enabled', async () => {
+        instrumentation.disable();
+        instrumentation.setConfig({
+          requireParentforIncomingSpans: true,
+          requireParentforOutgoingSpans: true,
+        });
+        instrumentation.enable();
+        const root = trace.wrapSpanContext(INVALID_SPAN_CONTEXT);
+        await context.with(trace.setSpan(context.active(), root), async () => {
+          const testPath = '/test/test';
+          await httpRequest.get(
+            `${protocol}://${hostname}:${serverPort}${testPath}`
+          );
+        });
+        const spans = memoryExporter.getFinishedSpans();
+        assert.strictEqual(spans.length, 0);
       });
 
       it('should trace with parent with both requireParent options enabled', done => {
@@ -1423,11 +1476,11 @@ describe('HttpInstrumentation', () => {
             .get(`${protocol}://${hostname}:${serverPort}${testPath}`)
             .then(result => {
               span.end();
-              assert(
+              assert.ok(
                 result.reqHeaders[DummyPropagation.TRACE_CONTEXT_KEY] !==
                   undefined
               );
-              assert(
+              assert.ok(
                 result.reqHeaders[DummyPropagation.SPAN_CONTEXT_KEY] !==
                   undefined
               );
@@ -1462,9 +1515,9 @@ describe('HttpInstrumentation', () => {
       it('should set rpc metadata for incoming http request', async () => {
         server = http.createServer((request, response) => {
           const rpcMetadata = getRPCMetadata(context.active());
-          assert(typeof rpcMetadata !== 'undefined');
-          assert(rpcMetadata.type === RPCType.HTTP);
-          assert(rpcMetadata.span.setAttribute('key', 'value'));
+          assert.ok(typeof rpcMetadata !== 'undefined');
+          assert.ok(rpcMetadata.type === RPCType.HTTP);
+          assert.ok(rpcMetadata.span.setAttribute('key', 'value'));
           response.end('Test Server Response');
         });
         await new Promise<void>(resolve => server.listen(serverPort, resolve));
@@ -1562,6 +1615,222 @@ describe('HttpInstrumentation', () => {
         outgoingSpan.attributes['http.response.header.x_server_header2'],
         undefined
       );
+    });
+  });
+  describe('URL Redaction', () => {
+    beforeEach(() => {
+      memoryExporter.reset();
+    });
+
+    before(async () => {
+      instrumentation.setConfig({});
+      instrumentation.enable();
+      server = http.createServer((request, response) => {
+        response.end('Test Server Response');
+      });
+      await new Promise<void>(resolve => server.listen(serverPort, resolve));
+    });
+
+    after(() => {
+      server.close();
+      instrumentation.disable();
+    });
+
+    it('should redact authentication credentials from URLs', async () => {
+      await httpRequest.get(
+        `${protocol}://user:password@${hostname}:${serverPort}${pathname}`
+      );
+      const spans = memoryExporter.getFinishedSpans();
+      const [incomingSpan, outgoingSpan] = spans;
+
+      assert.strictEqual(spans.length, 2);
+      assert.strictEqual(incomingSpan.kind, SpanKind.SERVER);
+      assert.strictEqual(outgoingSpan.kind, SpanKind.CLIENT);
+
+      // Server shouldn't see auth in URL
+      assert.strictEqual(
+        incomingSpan.attributes[ATTR_HTTP_URL],
+        `${protocol}://${hostname}:${serverPort}${pathname}`
+      );
+
+      // Client should have redacted auth
+      assert.strictEqual(
+        outgoingSpan.attributes[ATTR_HTTP_URL],
+        `${protocol}://REDACTED:REDACTED@${hostname}:${serverPort}${pathname}`
+      );
+    });
+    it('should redact default query strings', async () => {
+      await httpRequest.get(
+        `${protocol}://${hostname}:${serverPort}${pathname}?X-Goog-Signature=xyz789&normal=value`
+      );
+      const spans = memoryExporter.getFinishedSpans();
+      const [_, outgoingSpan] = spans;
+
+      assert.strictEqual(
+        outgoingSpan.attributes[ATTR_HTTP_URL],
+        `${protocol}://${hostname}:${serverPort}${pathname}?X-Goog-Signature=REDACTED&normal=value`
+      );
+    });
+
+    it('should handle both auth credentials and sensitive default query parameters', async () => {
+      await httpRequest.get(
+        `${protocol}://username:password@${hostname}:${serverPort}${pathname}?AWSAccessKeyId=secret`
+      );
+      const spans = memoryExporter.getFinishedSpans();
+      const [_, outgoingSpan] = spans;
+
+      assert.strictEqual(
+        outgoingSpan.attributes[ATTR_HTTP_URL],
+        `${protocol}://REDACTED:REDACTED@${hostname}:${serverPort}${pathname}?AWSAccessKeyId=REDACTED`
+      );
+    });
+    it('should handle URLs with special characters in auth and query', async () => {
+      await httpRequest.get(
+        `${protocol}://user%40domain:p%40ssword@${hostname}:${serverPort}${pathname}?sig=abc%3Ddef`
+      );
+      const spans = memoryExporter.getFinishedSpans();
+      const [_, outgoingSpan] = spans;
+
+      assert.strictEqual(
+        outgoingSpan.attributes[ATTR_HTTP_URL],
+        `${protocol}://REDACTED:REDACTED@${hostname}:${serverPort}${pathname}?sig=REDACTED`
+      );
+    });
+
+    it('should handle malformed query strings', async () => {
+      await httpRequest.get(
+        `${protocol}://${hostname}:${serverPort}${pathname}?X-Goog-Signature=value&=nokey&malformed=`
+      );
+      const spans = memoryExporter.getFinishedSpans();
+      const [_, outgoingSpan] = spans;
+
+      assert.strictEqual(
+        outgoingSpan.attributes[ATTR_HTTP_URL],
+        `${protocol}://${hostname}:${serverPort}${pathname}?X-Goog-Signature=REDACTED&=nokey&malformed=`
+      );
+    });
+    it('should not modify URLs without auth or sensitive query parameters', async () => {
+      await httpRequest.get(
+        `${protocol}://${hostname}:${serverPort}${pathname}?param=value&another=123`
+      );
+      const spans = memoryExporter.getFinishedSpans();
+      const [_, outgoingSpan] = spans;
+
+      assert.strictEqual(
+        outgoingSpan.attributes[ATTR_HTTP_URL],
+        `${protocol}://${hostname}:${serverPort}${pathname}?param=value&another=123`
+      );
+    });
+
+    it('should not modify URLs with no query string', async () => {
+      await httpRequest.get(
+        `${protocol}://${hostname}:${serverPort}${pathname}`
+      );
+      const spans = memoryExporter.getFinishedSpans();
+      const [_, outgoingSpan] = spans;
+
+      assert.strictEqual(
+        outgoingSpan.attributes[ATTR_HTTP_URL],
+        `${protocol}://${hostname}:${serverPort}${pathname}`
+      );
+    });
+
+    it('should not modify URLs with empty query parameters', async () => {
+      await httpRequest.get(
+        `${protocol}://${hostname}:${serverPort}${pathname}?sig=&empty=`
+      );
+      const spans = memoryExporter.getFinishedSpans();
+      const [_, outgoingSpan] = spans;
+
+      assert.strictEqual(
+        outgoingSpan.attributes[ATTR_HTTP_URL],
+        `${protocol}://${hostname}:${serverPort}${pathname}?sig=&empty=`
+      );
+    });
+
+    it('should preserve non-sensitive query parameters when sensitive ones are redacted', async () => {
+      await httpRequest.get(
+        `${protocol}://${hostname}:${serverPort}${pathname}?normal=value&Signature=secret&other=data`
+      );
+      const spans = memoryExporter.getFinishedSpans();
+      const [_, outgoingSpan] = spans;
+
+      assert.strictEqual(
+        outgoingSpan.attributes[ATTR_HTTP_URL],
+        `${protocol}://${hostname}:${serverPort}${pathname}?normal=value&Signature=REDACTED&other=data`
+      );
+    });
+    it('should redact only custom query parameters when user provides a populated config', async () => {
+      // Set additional parameters while keeping the default ones
+      instrumentation.setConfig({
+        redactedQueryParams: ['authorize', 'session_id'],
+      });
+
+      await httpRequest.get(
+        `${protocol}://${hostname}:${serverPort}${pathname}?sig=abc123&authorize=xyz789&normal=value`
+      );
+      const spans = memoryExporter.getFinishedSpans();
+      const [_, outgoingSpan] = spans;
+
+      assert.strictEqual(
+        outgoingSpan.attributes[ATTR_HTTP_URL],
+        `${protocol}://${hostname}:${serverPort}${pathname}?sig=abc123&authorize=REDACTED&normal=value`
+      );
+    });
+    it('should not redact query strings when redactedQueryParams is empty', async () => {
+      instrumentation.setConfig({
+        redactedQueryParams: [],
+      });
+
+      // URL with both default sensitive params and custom ones
+      await httpRequest.get(
+        `${protocol}://${hostname}:${serverPort}${pathname}?X-Goog-Signature=secret&api_key=12345&normal=value`
+      );
+      const spans = memoryExporter.getFinishedSpans();
+      const [_, outgoingSpan] = spans;
+
+      assert.strictEqual(
+        outgoingSpan.attributes[ATTR_HTTP_URL],
+        `${protocol}://${hostname}:${serverPort}${pathname}?X-Goog-Signature=secret&api_key=12345&normal=value`
+      );
+    });
+    it('should handle case-sensitive query parameter names correctly', async () => {
+      instrumentation.setConfig({
+        redactedQueryParams: ['TOKEN'],
+      });
+
+      await httpRequest.get(
+        `${protocol}://${hostname}:${serverPort}${pathname}?token=lowercase&TOKEN=uppercase&sig=secret`
+      );
+      const spans = memoryExporter.getFinishedSpans();
+      const [_, outgoingSpan] = spans;
+
+      // This tests whether parameter name matching is case-sensitive or case-insensitive
+      assert.strictEqual(
+        outgoingSpan.attributes[ATTR_HTTP_URL],
+        `${protocol}://${hostname}:${serverPort}${pathname}?token=lowercase&TOKEN=REDACTED&sig=secret`
+      );
+    });
+    it('should handle very complex URLs with multiple redaction points and if custom query strings are provided only redact those', async () => {
+      instrumentation.setConfig({
+        redactedQueryParams: ['api_key', 'token'],
+      });
+
+      const complexUrl =
+        `${protocol}://user:pass@${hostname}:${serverPort}${pathname}?` +
+        'sig=abc123&api_key=secret&normal=value&Signature=xyz&' +
+        'token=sensitive&X-Goog-Signature=gcp&AWSAccessKeyId=aws';
+
+      await httpRequest.get(complexUrl);
+      const spans = memoryExporter.getFinishedSpans();
+      const [_, outgoingSpan] = spans;
+
+      const expectedUrl =
+        `${protocol}://REDACTED:REDACTED@${hostname}:${serverPort}${pathname}?` +
+        'sig=abc123&api_key=REDACTED&normal=value&Signature=xyz&' +
+        'token=REDACTED&X-Goog-Signature=gcp&AWSAccessKeyId=aws';
+
+      assert.strictEqual(outgoingSpan.attributes[ATTR_HTTP_URL], expectedUrl);
     });
   });
 });

@@ -16,11 +16,14 @@
 
 import type { OtlpEncodingOptions, Fixed64, LongBits } from './internal-types';
 import { HrTime } from '@opentelemetry/api';
-import { hexToBinary, hrTimeToNanoseconds } from '@opentelemetry/core';
+import { hrTimeToNanoseconds } from '@opentelemetry/core';
+import { hexToBinary } from './hex-to-binary';
 
 export function hrTimeToNanos(hrTime: HrTime): bigint {
   const NANOSECONDS = BigInt(1_000_000_000);
-  return BigInt(hrTime[0]) * NANOSECONDS + BigInt(hrTime[1]);
+  return (
+    BigInt(Math.trunc(hrTime[0])) * NANOSECONDS + BigInt(Math.trunc(hrTime[1]))
+  );
 }
 
 export function toLongBits(value: bigint): LongBits {
