@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 import type { Link } from '@opentelemetry/api';
-import { IResource } from '@opentelemetry/resources';
+import { Resource } from '@opentelemetry/resources';
 import type { ReadableSpan, TimedEvent } from '@opentelemetry/sdk-trace-base';
 import type { Encoder } from '../common/utils';
 import {
@@ -34,13 +34,33 @@ import {
 import { OtlpEncodingOptions } from '../common/internal-types';
 import { getOtlpEncoder } from '../common/utils';
 
+// Span flags constants matching the OTLP specification
+const SPAN_FLAGS_CONTEXT_HAS_IS_REMOTE_MASK = 0x100;
+const SPAN_FLAGS_CONTEXT_IS_REMOTE_MASK = 0x200;
+
+/**
+ * Builds the 32-bit span flags value combining the low 8-bit W3C TraceFlags
+ * with the HAS_IS_REMOTE and IS_REMOTE bits according to the OTLP spec.
+ */
+function buildSpanFlagsFrom(traceFlags: number, isRemote?: boolean): number {
+  // low 8 bits are W3C TraceFlags (e.g., sampled)
+  let flags = (traceFlags & 0xff) | SPAN_FLAGS_CONTEXT_HAS_IS_REMOTE_MASK;
+  if (isRemote) {
+    flags |= SPAN_FLAGS_CONTEXT_IS_REMOTE_MASK;
+  }
+  return flags;
+}
+
 export function sdkSpanToOtlpSpan(span: ReadableSpan, encoder: Encoder): ISpan {
   const ctx = span.spanContext();
   const status = span.status;
+  const parentSpanId = span.parentSpanContext?.spanId
+    ? encoder.encodeSpanContext(span.parentSpanContext?.spanId)
+    : undefined;
   return {
     traceId: encoder.encodeSpanContext(ctx.traceId),
     spanId: encoder.encodeSpanContext(ctx.spanId),
-    parentSpanId: encoder.encodeOptionalSpanContext(span.parentSpanId),
+    parentSpanId: parentSpanId,
     traceState: ctx.traceState?.serialize(),
     name: span.name,
     // Span kind is offset by 1 because the API does not define a value for unset
@@ -58,6 +78,7 @@ export function sdkSpanToOtlpSpan(span: ReadableSpan, encoder: Encoder): ISpan {
     },
     links: span.links.map(link => toOtlpLink(link, encoder)),
     droppedLinksCount: span.droppedLinksCount,
+    flags: buildSpanFlagsFrom(ctx.traceFlags, span.parentSpanContext?.isRemote),
   };
 }
 
@@ -68,6 +89,7 @@ export function toOtlpLink(link: Link, encoder: Encoder): ILink {
     traceId: encoder.encodeSpanContext(link.context.traceId),
     traceState: link.context.traceState?.serialize(),
     droppedAttributesCount: link.droppedAttributesCount || 0,
+    flags: buildSpanFlagsFrom(link.context.traceFlags, link.context.isRemote),
   };
 }
 
@@ -112,24 +134,24 @@ export function createExportTraceServiceRequest(
 }
 
 function createResourceMap(readableSpans: ReadableSpan[]) {
-  const resourceMap: Map<IResource, Map<string, ReadableSpan[]>> = new Map();
+  const resourceMap: Map<Resource, Map<string, ReadableSpan[]>> = new Map();
   for (const record of readableSpans) {
-    let ilmMap = resourceMap.get(record.resource);
+    let ilsMap = resourceMap.get(record.resource);
 
-    if (!ilmMap) {
-      ilmMap = new Map();
-      resourceMap.set(record.resource, ilmMap);
+    if (!ilsMap) {
+      ilsMap = new Map();
+      resourceMap.set(record.resource, ilsMap);
     }
 
     // TODO this is duplicated in basic tracer. Consolidate on a common helper in core
-    const instrumentationLibraryKey = `${record.instrumentationLibrary.name}@${
-      record.instrumentationLibrary.version || ''
-    }:${record.instrumentationLibrary.schemaUrl || ''}`;
-    let records = ilmMap.get(instrumentationLibraryKey);
+    const instrumentationScopeKey = `${record.instrumentationScope.name}@${
+      record.instrumentationScope.version || ''
+    }:${record.instrumentationScope.schemaUrl || ''}`;
+    let records = ilsMap.get(instrumentationScopeKey);
 
     if (!records) {
       records = [];
-      ilmMap.set(instrumentationLibraryKey, records);
+      ilsMap.set(instrumentationScopeKey, records);
     }
 
     records.push(record);
@@ -160,20 +182,18 @@ function spanRecordsToResourceSpans(
         );
 
         scopeResourceSpans.push({
-          scope: createInstrumentationScope(
-            scopeSpans[0].instrumentationLibrary
-          ),
+          scope: createInstrumentationScope(scopeSpans[0].instrumentationScope),
           spans: spans,
-          schemaUrl: scopeSpans[0].instrumentationLibrary.schemaUrl,
+          schemaUrl: scopeSpans[0].instrumentationScope.schemaUrl,
         });
       }
       ilmEntry = ilmIterator.next();
     }
-    // TODO SDK types don't provide resource schema URL at this time
+    const processedResource = createResource(resource);
     const transformedSpans: IResourceSpans = {
-      resource: createResource(resource),
+      resource: processedResource,
       scopeSpans: scopeResourceSpans,
-      schemaUrl: undefined,
+      schemaUrl: processedResource.schemaUrl,
     };
 
     out.push(transformedSpans);

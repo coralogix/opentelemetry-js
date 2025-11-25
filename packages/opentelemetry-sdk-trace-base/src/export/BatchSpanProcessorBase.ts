@@ -18,10 +18,9 @@ import { context, Context, diag, TraceFlags } from '@opentelemetry/api';
 import {
   BindOnceFuture,
   ExportResultCode,
-  getEnv,
+  getNumberFromEnv,
   globalErrorHandler,
   suppressTracing,
-  unrefTimer,
 } from '@opentelemetry/core';
 import { Span } from '../Span';
 import { SpanProcessor } from '../SpanProcessor';
@@ -43,7 +42,7 @@ export abstract class BatchSpanProcessorBase<T extends BufferConfig>
 
   private _isExporting = false;
   private _finishedSpans: ReadableSpan[] = [];
-  private _timer: NodeJS.Timeout | undefined;
+  private _timer: NodeJS.Timeout | number | undefined;
   private _shutdownOnce: BindOnceFuture<void>;
   private _droppedSpansCount: number = 0;
 
@@ -51,23 +50,22 @@ export abstract class BatchSpanProcessorBase<T extends BufferConfig>
     private readonly _exporter: SpanExporter,
     config?: T
   ) {
-    const env = getEnv();
     this._maxExportBatchSize =
       typeof config?.maxExportBatchSize === 'number'
         ? config.maxExportBatchSize
-        : env.OTEL_BSP_MAX_EXPORT_BATCH_SIZE;
+        : (getNumberFromEnv('OTEL_BSP_MAX_EXPORT_BATCH_SIZE') ?? 512);
     this._maxQueueSize =
       typeof config?.maxQueueSize === 'number'
         ? config.maxQueueSize
-        : env.OTEL_BSP_MAX_QUEUE_SIZE;
+        : (getNumberFromEnv('OTEL_BSP_MAX_QUEUE_SIZE') ?? 2048);
     this._scheduledDelayMillis =
       typeof config?.scheduledDelayMillis === 'number'
         ? config.scheduledDelayMillis
-        : env.OTEL_BSP_SCHEDULE_DELAY;
+        : (getNumberFromEnv('OTEL_BSP_SCHEDULE_DELAY') ?? 5000);
     this._exportTimeoutMillis =
       typeof config?.exportTimeoutMillis === 'number'
         ? config.exportTimeoutMillis
-        : env.OTEL_BSP_EXPORT_TIMEOUT;
+        : (getNumberFromEnv('OTEL_BSP_EXPORT_TIMEOUT') ?? 30000);
 
     this._shutdownOnce = new BindOnceFuture(this._shutdown, this);
 
@@ -250,7 +248,11 @@ export abstract class BatchSpanProcessorBase<T extends BufferConfig>
     }
     if (this._timer !== undefined) return;
     this._timer = setTimeout(() => flush(), this._scheduledDelayMillis);
-    unrefTimer(this._timer);
+
+    // depending on runtime, this may be a 'number' or NodeJS.Timeout
+    if (typeof this._timer !== 'number') {
+      this._timer.unref();
+    }
   }
 
   private _clearTimer() {

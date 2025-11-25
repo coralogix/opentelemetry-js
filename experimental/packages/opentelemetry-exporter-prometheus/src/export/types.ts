@@ -66,4 +66,18 @@ export interface ExporterConfig {
    * @experimental
    */
   metricProducers?: MetricProducer[];
+
+  /**
+   * Regex pattern for defining which resource attributes will be applied
+   * as constant labels to the metrics.
+   * e.g. 'telemetry_.+' for all attributes starting with 'telemetry'.
+   * @default undefined (no resource attributes are applied)
+   */
+  withResourceConstantLabels?: RegExp;
+
+  /**
+   * If true, the target_info metric is not included in scraped metrics.
+   * @default false (target_info metric is included)
+   */
+  withoutTargetInfo?: boolean;
 }

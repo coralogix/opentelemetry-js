@@ -8,7 +8,10 @@
     "forceConsistentCasingInFileNames": true,
     "incremental": true,
     "inlineSources": true,
-    "module": "commonjs",
+    "isolatedModules": true,
+    "module": "node16",
+    "moduleResolution": "node16",
+    "esModuleInterop": false,
     "newLine": "LF",
     "noEmitOnError": true,
     "noFallthroughCasesInSwitch": true,
@@ -20,10 +23,10 @@
     "sourceMap": true,
     "strict": true,
     "strictNullChecks": true,
-    "target": "es2017",
+    "target": "es2022",
     "useUnknownInCatchVariables": false,
     "lib": [
-      "es2017",
+      "es2022",
       "dom",
       "dom.iterable"
     ]

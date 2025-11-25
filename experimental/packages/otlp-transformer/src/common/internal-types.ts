@@ -15,12 +15,15 @@
  */
 
 /** Properties of a Resource. */
-export interface IResource {
+export interface Resource {
   /** Resource attributes */
   attributes: IKeyValue[];
 
   /** Resource droppedAttributesCount */
   droppedAttributesCount: number;
+
+  /** Resource schemaUrl */
+  schemaUrl?: string;
 }
 
 /** Properties of an InstrumentationScope. */

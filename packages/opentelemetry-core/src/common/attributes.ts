@@ -14,20 +14,24 @@
  * limitations under the License.
  */
 
-import { diag, SpanAttributeValue, SpanAttributes } from '@opentelemetry/api';
+import { diag, AttributeValue, Attributes } from '@opentelemetry/api';
 
-export function sanitizeAttributes(attributes: unknown): SpanAttributes {
-  const out: SpanAttributes = {};
+export function sanitizeAttributes(attributes: unknown): Attributes {
+  const out: Attributes = {};
 
   if (typeof attributes !== 'object' || attributes == null) {
     return out;
   }
 
-  for (const [key, val] of Object.entries(attributes)) {
+  for (const key in attributes) {
+    if (!Object.prototype.hasOwnProperty.call(attributes, key)) {
+      continue;
+    }
     if (!isAttributeKey(key)) {
       diag.warn(`Invalid attribute key: ${key}`);
       continue;
     }
+    const val = (attributes as Record<string, unknown>)[key];
     if (!isAttributeValue(val)) {
       diag.warn(`Invalid attribute value set for key: ${key}`);
       continue;
@@ -43,10 +47,10 @@ export function sanitizeAttributes(attributes: unknown): SpanAttributes {
 }
 
 export function isAttributeKey(key: unknown): key is string {
-  return typeof key === 'string' && key.length > 0;
+  return typeof key === 'string' && key !== '';
 }
 
-export function isAttributeValue(val: unknown): val is SpanAttributeValue {
+export function isAttributeValue(val: unknown): val is AttributeValue {
   if (val == null) {
     return true;
   }
@@ -55,7 +59,7 @@ export function isAttributeValue(val: unknown): val is SpanAttributeValue {
     return isHomogeneousAttributeValueArray(val);
   }
 
-  return isValidPrimitiveAttributeValue(val);
+  return isValidPrimitiveAttributeValueType(typeof val);
 }
 
 function isHomogeneousAttributeValueArray(arr: unknown[]): boolean {
@@ -64,18 +68,19 @@ function isHomogeneousAttributeValueArray(arr: unknown[]): boolean {
   for (const element of arr) {
     // null/undefined elements are allowed
     if (element == null) continue;
+    const elementType = typeof element;
+
+    if (elementType === type) {
+      continue;
+    }
 
     if (!type) {
-      if (isValidPrimitiveAttributeValue(element)) {
-        type = typeof element;
+      if (isValidPrimitiveAttributeValueType(elementType)) {
+        type = elementType;
         continue;
       }
       // encountered an invalid primitive
       return false;
-    }
-
-    if (typeof element === type) {
-      continue;
     }
 
     return false;
@@ -84,8 +89,8 @@ function isHomogeneousAttributeValueArray(arr: unknown[]): boolean {
   return true;
 }
 
-function isValidPrimitiveAttributeValue(val: unknown): boolean {
-  switch (typeof val) {
+function isValidPrimitiveAttributeValueType(valType: string): boolean {
+  switch (valType) {
     case 'number':
     case 'boolean':
     case 'string':

@@ -6,9 +6,6 @@
       "path": "api/tsconfig.esm.json"
     },
     {
-      "path": "experimental/packages/api-events/tsconfig.esm.json"
-    },
-    {
       "path": "experimental/packages/api-logs/tsconfig.esm.json"
     },
     {
@@ -48,7 +45,7 @@
       "path": "experimental/packages/otlp-transformer/tsconfig.esm.json"
     },
     {
-      "path": "experimental/packages/sdk-events/tsconfig.esm.json"
+      "path": "experimental/packages/sampler-composite/tsconfig.esm.json"
     },
     {
       "path": "experimental/packages/sdk-logs/tsconfig.esm.json"

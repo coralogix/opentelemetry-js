@@ -16,9 +16,9 @@
 
 import { AggregationTemporalityPreference } from '../../src';
 import {
-  Aggregation,
+  AggregationOption,
   AggregationTemporality,
-  ExplicitBucketHistogramAggregation,
+  AggregationType,
   InstrumentType,
   MeterProvider,
   PeriodicExportingMetricReader,
@@ -57,7 +57,6 @@ describe('OTLPMetricExporter', function () {
           .getMeter('test-meter')
           .createCounter('test-counter')
           .add(1);
-        await meterProvider.forceFlush();
         await meterProvider.shutdown();
 
         // assert
@@ -77,12 +76,9 @@ describe('OTLPMetricExporter', function () {
         (window.navigator as any).sendBeacon = false;
       });
 
-      it('should successfully send data using XMLHttpRequest', async function () {
+      it('should successfully send data using fetch', async function () {
         // arrange
-        const server = sinon.fakeServer.create();
-        server.respondWith('OK');
-        server.respondImmediately = true;
-        server.autoRespond = true;
+        const stubFetch = sinon.stub(window, 'fetch');
         const meterProvider = new MeterProvider({
           readers: [
             new PeriodicExportingMetricReader({
@@ -96,16 +92,14 @@ describe('OTLPMetricExporter', function () {
           .getMeter('test-meter')
           .createCounter('test-counter')
           .add(1);
-
-        await meterProvider.forceFlush();
         await meterProvider.shutdown();
 
         // assert
-        const request = server.requests[0];
-        const body = request.requestBody as unknown as Uint8Array;
+        const request = new Request(...stubFetch.args[0]);
+        const body = await request.text();
         assert.doesNotThrow(
-          () => JSON.parse(new TextDecoder().decode(body)),
-          'expected requestBody to be in JSON format, but parsing failed'
+          () => JSON.parse(body),
+          'expected request body to be in JSON format, but parsing failed'
         );
       });
     });
@@ -223,9 +217,12 @@ describe('OTLPMetricExporter', function () {
 
   describe('aggregation', () => {
     it('aggregationSelector calls the selector supplied to the constructor', () => {
-      const aggregation: Aggregation = new ExplicitBucketHistogramAggregation([
-        0, 100, 100000,
-      ]);
+      const aggregation: AggregationOption = {
+        type: AggregationType.EXPLICIT_BUCKET_HISTOGRAM,
+        options: {
+          boundaries: [0, 100, 100000],
+        },
+      };
       const exporter = new OTLPMetricExporter({
         aggregationPreference: _instrumentType => aggregation,
       });
@@ -237,11 +234,15 @@ describe('OTLPMetricExporter', function () {
 
     it('aggregationSelector returns the default aggregation preference when nothing is supplied', () => {
       const exporter = new OTLPMetricExporter({
-        aggregationPreference: _instrumentType => Aggregation.Default(),
+        aggregationPreference: _instrumentType => ({
+          type: AggregationType.DEFAULT,
+        }),
       });
       assert.deepStrictEqual(
         exporter.selectAggregation(InstrumentType.COUNTER),
-        Aggregation.Default()
+        {
+          type: AggregationType.DEFAULT,
+        }
       );
     });
   });
