@@ -1,0 +1,27 @@
+name: Publish instrumentation
+
+on:
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Branch to run the workflow against
+        required: true
+        default: coralogix-autoinstrumentation
+
+jobs:
+  publish-npm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.branch }}
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 18
+          registry-url: https://registry.npmjs.org/
+      - run: |
+          npm install
+          npm publish --access public
+        working-directory: ./experimental/packages/opentelemetry-instrumentation
+        env:
+          NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
