@@ -22,18 +22,16 @@ import { InMemorySpanExporter, ReadableSpan } from '../../../src';
  */
 export class TestExporterWithDelay extends InMemorySpanExporter {
   private _exporterCreatedSpans: ReadableSpan[] = [];
-  private _delayMs: number;
 
-  constructor(delayMs: number) {
+  constructor() {
     super();
-    this._delayMs = delayMs;
   }
 
   override export(
     spans: ReadableSpan[],
     resultCallback: (result: ExportResult) => void
   ): void {
-    setTimeout(() => super.export(spans, resultCallback), this._delayMs);
+    super.export(spans, () => setTimeout(resultCallback, 1));
   }
 
   override shutdown(): Promise<void> {
