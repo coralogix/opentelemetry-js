@@ -22,6 +22,9 @@ jobs:
         with:
           node-version: 18
           registry-url: https://registry.npmjs.org/
+      - name: Generate API version file
+        run: npm run version
+        working-directory: ./api
       - run: |
           npm install
           sed -i 's/"name": "@opentelemetry\/instrumentation"/"name": "@coralogix\/instrumentation"/' package.json
