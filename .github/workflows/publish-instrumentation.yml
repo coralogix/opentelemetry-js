@@ -1,0 +1,32 @@
+name: Publish instrumentation
+
+permissions:
+  contents: read
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag, or SHA to publish from
+        required: true
+        default: coralogix-autoinstrumentation
+
+jobs:
+  publish-npm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org/
+      - run: |
+          npm install --workspaces=false
+          npx tsc -p tsconfig.json -p tsconfig.esm.json -p tsconfig.esnext.json
+          sed -i 's/"name": "@opentelemetry\/instrumentation"/"name": "@coralogix\/instrumentation"/' package.json
+          npm publish --access public
+        working-directory: ./experimental/packages/opentelemetry-instrumentation
+        env:
+          NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
