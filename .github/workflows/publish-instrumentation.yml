@@ -1,10 +1,13 @@
 name: Publish instrumentation
 
+permissions:
+  contents: read
+
 on:
   workflow_dispatch:
     inputs:
-      branch:
-        description: Branch to run the workflow against
+      ref:
+        description: Branch, tag, or SHA to publish from
         required: true
         default: coralogix-autoinstrumentation
 
@@ -14,13 +17,14 @@ jobs:
     steps:
       - uses: actions/checkout@v3
         with:
-          ref: ${{ inputs.branch }}
+          ref: ${{ inputs.ref }}
       - uses: actions/setup-node@v3
         with:
           node-version: 18
           registry-url: https://registry.npmjs.org/
       - run: |
           npm install
+          sed -i 's/"name": "@opentelemetry\/instrumentation"/"name": "@coralogix\/instrumentation"/' package.json
           npm publish --access public
         working-directory: ./experimental/packages/opentelemetry-instrumentation
         env:
