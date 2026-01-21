@@ -20,13 +20,11 @@ jobs:
           ref: ${{ inputs.ref }}
       - uses: actions/setup-node@v3
         with:
-          node-version: 18
+          node-version: 20
           registry-url: https://registry.npmjs.org/
-      - name: Generate API version file
-        run: npm run version
-        working-directory: ./api
       - run: |
-          npm install
+          npm install --workspaces=false
+          npm run compile
           sed -i 's/"name": "@opentelemetry\/instrumentation"/"name": "@coralogix\/instrumentation"/' package.json
           npm publish --access public
         working-directory: ./experimental/packages/opentelemetry-instrumentation
