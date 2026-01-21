@@ -3,13 +3,16 @@
 This document is aimed at Maintainers and describes how to release a new version of the packages contained in this repository.
 We aim to eventually automate this process as much as possible.
 
+> [!IMPORTANT]
+> You must have another maintainer approve the deployment to NPM. Make sure to coordinate with them before starting the release process.
+> Never approve deployments that were not coordinated with you ahead of time.
+
 ## 1. Create a release PR
 
 1. Go to the [Release PR Workflow](https://github.com/open-telemetry/opentelemetry-js/actions/workflows/create-or-update-release-pr.yml)
 2. Click "Run workflow"
-3. For `Branch`, select the branch you want to release from, `main` (current major) or `1.x` (if you backported something)
-4. For `Release Type`, select if you want to create a release PR for a new `minor` or `patch` version.
-5. For `Release Scope`, select if you want to release
+3. For `Release Type`, select if you want to create a release PR for a new `minor` or `patch` version.
+4. For `Release Scope`, select if you want to release
    - `experimental` (all packages under `./experimental/packages`)
    - `sdk` (all packages under `./packages/` and `./experimental/packages`)
    - `all` (all packages under `./api/`, `./packages/` and `./experimental/packages`; excludes `./semantic-conventions/`)
@@ -27,15 +30,25 @@ We aim to eventually automate this process as much as possible.
 ## 3. Publish to NPM
 
 > [!IMPORTANT]
-> This step will publish anything that's on the branch you're releasing from IF AND ONLY IF the version has been bumped. If the version for a package
+> This step will publish anything that's on `main` IF AND ONLY IF the version has been bumped. If the version for a package
 > has not been bumped, it will not publish a new version of the package.
 
 1. Go to the [NPM publish workflow](https://github.com/open-telemetry/opentelemetry-js/actions/workflows/publish-to-npm.yml)
-2. Click "Run workflow" (from `main` or `v1.x`, based on what branch you chose to create the release PR for)
-   1. In rare cases not all packages are published due to a race when publishing, if you suspect this to
-      be the case, re-run the workflow: there should be enough time from 1.
+2. Click "Run workflow" (from main)
+3. Get another maintainer to approve the workflow run
+   1. Have them navigate to the workflow run, and then click on "Review pending deployments" ![workflow job waiting for deployment approval](./releasing/waiting-for-approvals.png)
+   2. They should then check the box and select "Approve and deploy" ![approve and deploy button](./releasing/approve-and-deploy.png) to approve the deployment to NPM.
 
-## 4. Create GitHub Releases
+## 4. Troubleshooting NPM publishing issues
+
+> [!NOTE]
+> You can skip this step if the `publish-to-npm` workflow completed successfully.
+
+- New packages that have never been published before cannot be published this way - contact an `@opentelemetry` org Admin to publish them manually.
+- In rare cases not all packages are published due to a race when publishing, if you suspect this to be the case, re-run the workflow.
+  This will only publish packages that failed to publish the first time around. Repeat [Step 3: Publish to NPM](#3-publish-to-npm) until all packages are published.
+
+## 5. Create GitHub Releases
 
 1. Check out the commit created by merging the release PR
 2. Run
