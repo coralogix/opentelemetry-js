@@ -23,6 +23,7 @@ import {
 } from '@opentelemetry/api';
 import {
   CompositePropagator,
+  getNumberFromEnv,
   getStringFromEnv,
   getStringListFromEnv,
   W3CBaggagePropagator,
@@ -50,6 +51,15 @@ import {
 import { B3InjectEncoding, B3Propagator } from '@opentelemetry/propagator-b3';
 import { JaegerPropagator } from '@opentelemetry/propagator-jaeger';
 import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
+import { ConfigurationModel } from '@opentelemetry/configuration';
+import {
+  IMetricReader,
+  PeriodicExportingMetricReader,
+  PushMetricExporter,
+} from '@opentelemetry/sdk-metrics';
+import { OTLPMetricExporter as OTLPGrpcMetricExporter } from '@opentelemetry/exporter-metrics-otlp-grpc';
+import { OTLPMetricExporter as OTLPHttpMetricExporter } from '@opentelemetry/exporter-metrics-otlp-http';
+import { OTLPMetricExporter as OTLPProtoMetricExporter } from '@opentelemetry/exporter-metrics-otlp-proto';
 
 const RESOURCE_DETECTOR_ENVIRONMENT = 'env';
 const RESOURCE_DETECTOR_HOST = 'host';
@@ -90,10 +100,6 @@ export function getResourceDetectorsFromEnv(): Array<ResourceDetector> {
   });
 }
 
-export function filterBlanksAndNulls(list: string[]): string[] {
-  return list.map(item => item.trim()).filter(s => s !== 'null' && s !== '');
-}
-
 export function getOtlpProtocolFromEnv(): string {
   return (
     getStringFromEnv('OTEL_EXPORTER_OTLP_TRACES_PROTOCOL') ??
@@ -128,9 +134,9 @@ export function getSpanProcessorsFromEnv(): SpanProcessor[] {
   ]);
   const exporters: SpanExporter[] = [];
   const processors: SpanProcessor[] = [];
-  let traceExportersList = filterBlanksAndNulls(
-    Array.from(new Set(getStringListFromEnv('OTEL_TRACES_EXPORTER')))
-  );
+  let traceExportersList = Array.from(
+    new Set(getStringListFromEnv('OTEL_TRACES_EXPORTER'))
+  ).filter(s => s !== 'null');
 
   if (traceExportersList[0] === 'none') {
     diag.warn(
@@ -208,28 +214,78 @@ export function getPropagatorFromEnv(): TextMapPropagator | null | undefined {
 
   // Values MUST be deduplicated in order to register a Propagator only once.
   const uniquePropagatorNames = Array.from(new Set(propagatorsEnvVarValue));
+  const validPropagators: TextMapPropagator[] = [];
 
-  const propagators = uniquePropagatorNames.map(name => {
+  uniquePropagatorNames.forEach(name => {
     const propagator = propagatorsFactory.get(name)?.();
     if (!propagator) {
       diag.warn(
         `Propagator "${name}" requested through environment variable is unavailable.`
       );
-      return undefined;
+      return;
     }
 
-    return propagator;
+    validPropagators.push(propagator);
   });
 
-  const validPropagators = propagators.reduce<TextMapPropagator[]>(
-    (list, item) => {
-      if (item) {
-        list.push(item);
-      }
-      return list;
-    },
-    []
+  if (validPropagators.length === 0) {
+    // null to signal that the default should **not** be used in its place.
+    return null;
+  } else if (uniquePropagatorNames.length === 1) {
+    return validPropagators[0];
+  } else {
+    return new CompositePropagator({
+      propagators: validPropagators,
+    });
+  }
+}
+
+/**
+ * Get a propagator as defined by configuration model from configuration
+ */
+export function getPropagatorFromConfiguration(
+  config: ConfigurationModel
+): TextMapPropagator | null | undefined {
+  const propagatorsValue = getKeyListFromObjectArray(
+    config.propagator?.composite
   );
+  if (propagatorsValue == null) {
+    // return undefined to fall back to default
+    return undefined;
+  }
+
+  if (propagatorsValue.includes('none')) {
+    return null;
+  }
+
+  // Implementation note: this only contains specification required propagators that are actually hosted in this repo.
+  // Any other propagators (like aws, aws-lambda, should go into `@opentelemetry/auto-configuration-propagators` instead).
+  const propagatorsFactory = new Map<string, () => TextMapPropagator>([
+    ['tracecontext', () => new W3CTraceContextPropagator()],
+    ['baggage', () => new W3CBaggagePropagator()],
+    ['b3', () => new B3Propagator()],
+    [
+      'b3multi',
+      () => new B3Propagator({ injectEncoding: B3InjectEncoding.MULTI_HEADER }),
+    ],
+    ['jaeger', () => new JaegerPropagator()],
+  ]);
+
+  // Values MUST be deduplicated in order to register a Propagator only once.
+  const uniquePropagatorNames = Array.from(new Set(propagatorsValue));
+  const validPropagators: TextMapPropagator[] = [];
+
+  uniquePropagatorNames.forEach(name => {
+    const propagator = propagatorsFactory.get(name)?.();
+    if (!propagator) {
+      diag.warn(
+        `Propagator "${name}" requested through configuration is unavailable.`
+      );
+      return;
+    }
+
+    validPropagators.push(propagator);
+  });
 
   if (validPropagators.length === 0) {
     // null to signal that the default should **not** be used in its place.
@@ -263,6 +319,12 @@ export function setupContextManager(
   context.setGlobalContextManager(contextManager);
 }
 
+export function setupDefaultContextManager() {
+  const defaultContextManager = new AsyncLocalStorageContextManager();
+  defaultContextManager.enable();
+  context.setGlobalContextManager(defaultContextManager);
+}
+
 export function setupPropagator(
   propagator: TextMapPropagator | null | undefined
 ) {
@@ -285,4 +347,100 @@ export function setupPropagator(
   }
 
   propagation.setGlobalPropagator(propagator);
+}
+
+export function getKeyListFromObjectArray(
+  obj: object[] | undefined
+): string[] | undefined {
+  if (!obj || obj.length === 0) {
+    return undefined;
+  }
+  return obj
+    .map(item => Object.keys(item))
+    .reduce((prev, curr) => prev.concat(curr), []);
+}
+
+export function getAndValidateMillisFromEnv(
+  envVarName: string
+): number | undefined {
+  const value = getNumberFromEnv(envVarName);
+  if (value != null && value <= 0) {
+    diag.warn(
+      `${envVarName} (${value}) is invalid, expected number greater than 0, using default.`
+    );
+    return undefined;
+  }
+  return value;
+}
+
+export function getPeriodicExportingMetricReaderFromEnv(
+  exporter: PushMetricExporter
+): IMetricReader {
+  const defaultTimeoutMillis = 30_000;
+  const defaultIntervalMillis = 60_000;
+
+  const rawExportIntervalMillis = getAndValidateMillisFromEnv(
+    'OTEL_METRIC_EXPORT_INTERVAL'
+  );
+  const rawExportTimeoutMillis = getAndValidateMillisFromEnv(
+    'OTEL_METRIC_EXPORT_TIMEOUT'
+  );
+
+  // Apply defaults
+  const exportIntervalMillis = rawExportIntervalMillis ?? defaultIntervalMillis;
+  let exportTimeoutMillis = rawExportTimeoutMillis ?? defaultTimeoutMillis;
+
+  // Ensure timeout doesn't exceed interval
+  if (exportTimeoutMillis > exportIntervalMillis) {
+    // determine which env vars were set and which ones defaulted for logging purposes
+    const timeoutSource =
+      rawExportTimeoutMillis != null
+        ? rawExportTimeoutMillis.toString()
+        : `${defaultTimeoutMillis}, default`;
+    const intervalSource =
+      rawExportIntervalMillis != null
+        ? rawExportIntervalMillis.toString()
+        : `${defaultIntervalMillis}, default`;
+
+    const bothSetByUser =
+      rawExportTimeoutMillis != null && rawExportIntervalMillis != null;
+    const logMessage = `OTEL_METRIC_EXPORT_TIMEOUT (${timeoutSource}) is greater than OTEL_METRIC_EXPORT_INTERVAL (${intervalSource}). Clamping timeout to interval value.`;
+
+    // only bother users if they explicitly set both values.
+    if (bothSetByUser) {
+      diag.warn(logMessage);
+    } else {
+      diag.info(logMessage);
+    }
+
+    exportTimeoutMillis = exportIntervalMillis;
+  }
+
+  return new PeriodicExportingMetricReader({
+    exportTimeoutMillis,
+    exportIntervalMillis,
+    exporter,
+  });
+}
+
+export function getOtlpMetricExporterFromEnv(): PushMetricExporter {
+  const protocol =
+    (
+      getStringFromEnv('OTEL_EXPORTER_OTLP_METRICS_PROTOCOL') ??
+      getStringFromEnv('OTEL_EXPORTER_OTLP_PROTOCOL')
+    )?.trim() || 'http/protobuf'; // Using || to also fall back on empty string
+
+  switch (protocol) {
+    case 'grpc':
+      return new OTLPGrpcMetricExporter();
+    case 'http/json':
+      return new OTLPHttpMetricExporter();
+    case 'http/protobuf':
+      return new OTLPProtoMetricExporter();
+  }
+
+  diag.warn(
+    `Unsupported OTLP metrics protocol: "${protocol}". Using http/protobuf.`
+  );
+  return new OTLPProtoMetricExporter();
 }

@@ -32,7 +32,6 @@ import {
 import {
   addHrTimes,
   millisToHrTime,
-  getTimeOrigin,
   hrTime,
   hrTimeDuration,
   InstrumentationScope,
@@ -119,7 +118,7 @@ export class SpanImpl implements Span {
     this._spanContext = opts.spanContext;
     this._performanceStartTime = otperformance.now();
     this._performanceOffset =
-      now - (this._performanceStartTime + getTimeOrigin());
+      now - (this._performanceStartTime + otperformance.timeOrigin);
     this._startTimeProvided = opts.startTime != null;
     this._spanLimits = opts.spanLimits;
     this._attributeValueLengthLimit =
@@ -270,8 +269,6 @@ export class SpanImpl implements Span {
       );
       return;
     }
-    this._ended = true;
-
     this.endTime = this._getTime(endTime);
     this._duration = hrTimeDuration(this.startTime, this.endTime);
 
@@ -290,7 +287,11 @@ export class SpanImpl implements Span {
         `Dropped ${this._droppedEventsCount} events because eventCountLimit reached`
       );
     }
+    if (this._spanProcessor.onEnding) {
+      this._spanProcessor.onEnding(this);
+    }
 
+    this._ended = true;
     this._spanProcessor.onEnd(this);
   }
 
