@@ -1,17 +1,6 @@
 /*
  * Copyright The OpenTelemetry Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 import { context, SpanKind, Span, propagation } from '@opentelemetry/api';
@@ -23,7 +12,6 @@ import {
 } from '@opentelemetry/sdk-trace-base';
 import * as assert from 'assert';
 import * as path from 'path';
-import * as url from 'url';
 import { HttpInstrumentation } from '../../src/http';
 import { assertSpan } from '../utils/assertSpan';
 import { DummyPropagation } from '../utils/DummyPropagation';
@@ -83,10 +71,10 @@ describe('Packages', () => {
       it(`should create a span for GET requests and add propagation headers by using ${name} package`, async () => {
         nock.load(path.join(__dirname, '../', '/fixtures/google-http.json'));
 
-        const urlparsed = url.parse(
+        const urlparsed = new URL(
           `${protocol}://www.google.com/search?q=axios&oq=axios&aqs=chrome.0.69i59l2j0l3j69i60.811j0j7&sourceid=chrome&ie=UTF-8`
         );
-        const result = await httpPackage.get(urlparsed.href!);
+        const result = await httpPackage.get(urlparsed.href);
         if (!resHeaders) {
           const res = result as axios.AxiosResponse<unknown>;
           resHeaders = res.headers as any;
@@ -94,11 +82,11 @@ describe('Packages', () => {
         const spans = memoryExporter.getFinishedSpans();
         const span = spans[0];
         const validations = {
-          hostname: urlparsed.hostname!,
+          hostname: urlparsed.hostname,
           httpStatusCode: 200,
           httpMethod: 'GET',
-          pathname: urlparsed.pathname!,
-          path: urlparsed.path,
+          pathname: urlparsed.pathname,
+          path: urlparsed.pathname + urlparsed.search,
           resHeaders,
           component: 'http',
         };

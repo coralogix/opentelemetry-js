@@ -1,17 +1,6 @@
 /*
  * Copyright The OpenTelemetry Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 import { diag } from '@opentelemetry/api';
@@ -35,6 +24,7 @@ export class PrometheusExporter extends MetricReader {
     prefix: '',
     appendTimestamp: false,
     withResourceConstantLabels: undefined,
+    withoutScopeInfo: false,
     withoutTargetInfo: false,
   };
 
@@ -87,6 +77,9 @@ export class PrometheusExporter extends MetricReader {
     const _withResourceConstantLabels =
       config.withResourceConstantLabels ||
       PrometheusExporter.DEFAULT_OPTIONS.withResourceConstantLabels;
+    const _withoutScopeInfo =
+      config.withoutScopeInfo ||
+      PrometheusExporter.DEFAULT_OPTIONS.withoutScopeInfo;
     const _withoutTargetInfo =
       config.withoutTargetInfo ||
       PrometheusExporter.DEFAULT_OPTIONS.withoutTargetInfo;
@@ -96,7 +89,8 @@ export class PrometheusExporter extends MetricReader {
       this._prefix,
       this._appendTimestamp,
       _withResourceConstantLabels,
-      _withoutTargetInfo
+      _withoutTargetInfo,
+      _withoutScopeInfo
     );
 
     this._baseUrl = `http://${this._host}:${this._port}/`;

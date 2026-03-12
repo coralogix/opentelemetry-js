@@ -1,17 +1,6 @@
 /*
  * Copyright The OpenTelemetry Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 import type { EventEmitter } from 'events';
@@ -140,22 +129,38 @@ export class GrpcInstrumentation extends InstrumentationBase<GrpcInstrumentation
           this._wrap(
             moduleExports.Client.prototype,
             'makeUnaryRequest',
-            this._patchClientRequestMethod(moduleExports, false)
+            this._patchClientRequestMethod(
+              moduleExports,
+              false,
+              'makeUnaryRequest'
+            )
           );
           this._wrap(
             moduleExports.Client.prototype,
             'makeClientStreamRequest',
-            this._patchClientRequestMethod(moduleExports, false)
+            this._patchClientRequestMethod(
+              moduleExports,
+              false,
+              'makeClientStreamRequest'
+            )
           );
           this._wrap(
             moduleExports.Client.prototype,
             'makeServerStreamRequest',
-            this._patchClientRequestMethod(moduleExports, true)
+            this._patchClientRequestMethod(
+              moduleExports,
+              true,
+              'makeServerStreamRequest'
+            )
           );
           this._wrap(
             moduleExports.Client.prototype,
             'makeBidiStreamRequest',
-            this._patchClientRequestMethod(moduleExports, true)
+            this._patchClientRequestMethod(
+              moduleExports,
+              true,
+              'makeBidiStreamRequest'
+            )
           );
           return moduleExports;
         },
@@ -304,15 +309,14 @@ export class GrpcInstrumentation extends InstrumentationBase<GrpcInstrumentation
    */
   private _patchClientRequestMethod<ReturnType extends EventEmitter>(
     grpcLib: typeof grpcJs,
-    hasResponseStream: boolean
+    hasResponseStream: boolean,
+    name: string
   ): (
     original: ClientRequestFunction<ReturnType>
   ) => ClientRequestFunction<ReturnType> {
     const instrumentation = this;
     return (original: ClientRequestFunction<ReturnType>) => {
-      instrumentation._diag.debug(
-        'patched makeClientStreamRequest on grpc client'
-      );
+      instrumentation._diag.debug(`patched ${name} on grpc client`);
 
       return function makeClientStreamRequest(this: grpcJs.Client) {
         // method must always be at first position

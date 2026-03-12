@@ -1,24 +1,13 @@
 /*
  * Copyright The OpenTelemetry Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 import * as api from '@opentelemetry/api';
 import { AggregationTemporality } from './AggregationTemporality';
 import { MetricProducer } from './MetricProducer';
 import { CollectionResult, InstrumentType } from './MetricData';
-import { callWithTimeout, FlatMap } from '../utils';
+import { callWithTimeout } from '../utils';
 import {
   CollectionOptions,
   ForceFlushOptions,
@@ -230,13 +219,12 @@ export abstract class MetricReader implements IMetricReader {
 
     // Merge the results, keeping the SDK's Resource
     const errors = sdkCollectionResults.errors.concat(
-      FlatMap(additionalCollectionResults, result => result.errors)
+      additionalCollectionResults.flatMap(result => result.errors)
     );
     const resource = sdkCollectionResults.resourceMetrics.resource;
     const scopeMetrics =
       sdkCollectionResults.resourceMetrics.scopeMetrics.concat(
-        FlatMap(
-          additionalCollectionResults,
+        additionalCollectionResults.flatMap(
           result => result.resourceMetrics.scopeMetrics
         )
       );

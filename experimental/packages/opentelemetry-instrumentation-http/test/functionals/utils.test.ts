@@ -1,17 +1,6 @@
 /*
  * Copyright The OpenTelemetry Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * SPDX-License-Identifier: Apache-2.0
  */
 import {
   Attributes,
@@ -46,6 +35,7 @@ import { AsyncHooksContextManager } from '@opentelemetry/context-async-hooks';
 import { SemconvStability } from '@opentelemetry/instrumentation';
 import { extractHostnameAndPort } from '../../src/utils';
 import { AttributeNames } from '../../src/enums/AttributeNames';
+import { ParsedUrlQuery } from 'node:querystring';
 
 describe('Utility', () => {
   describe('parseResponseStatus()', () => {
@@ -80,7 +70,20 @@ describe('Utility', () => {
   describe('getRequestInfo()', () => {
     it('should get options object', () => {
       const webUrl = 'http://u:p@google.fr/aPath?qu=ry';
-      const urlParsed = url.parse(webUrl);
+      const urlParsed = {
+        protocol: 'http:',
+        slashes: true,
+        auth: 'u:p',
+        host: 'google.fr',
+        port: null,
+        hostname: 'google.fr',
+        hash: null,
+        search: '?qu=ry',
+        query: 'qu=ry',
+        pathname: '/aPath',
+        path: '/aPath?qu=ry',
+        href: 'http://u:p@google.fr/aPath?qu=ry',
+      };
       const urlParsedWithoutPathname = {
         ...urlParsed,
         pathname: undefined,
@@ -95,7 +98,7 @@ describe('Utility', () => {
         host: undefined,
         port: null,
       };
-      const whatWgUrl = new url.URL(webUrl);
+      const whatWgUrl = new URL(webUrl);
       for (const param of [
         webUrl,
         urlParsed,
@@ -155,12 +158,44 @@ describe('Utility', () => {
   describe('getAbsoluteUrl()', () => {
     it('should return absolute url with localhost', () => {
       const path = '/test/1';
-      const result = utils.getAbsoluteUrl(url.parse(path), {});
+      const result = utils.getAbsoluteUrl(
+        {
+          protocol: null,
+          slashes: null,
+          auth: null,
+          host: null,
+          port: null,
+          hostname: null,
+          hash: null,
+          search: null,
+          query: null as unknown as undefined,
+          pathname: '/test/1',
+          path: '/test/1',
+          href: '/test/1',
+        },
+        {}
+      );
       assert.strictEqual(result, `http://localhost${path}`);
     });
     it('should return absolute url', () => {
       const absUrl = 'http://www.google/test/1?query=1';
-      const result = utils.getAbsoluteUrl(url.parse(absUrl), {});
+      const result = utils.getAbsoluteUrl(
+        {
+          protocol: 'http:',
+          slashes: true,
+          auth: null,
+          host: 'www.google',
+          port: null,
+          hostname: 'www.google',
+          hash: null,
+          search: '?query=1',
+          query: 'query=1' as unknown as ParsedUrlQuery,
+          pathname: '/test/1',
+          path: '/test/1?query=1',
+          href: 'http://www.google/test/1?query=1',
+        },
+        {}
+      );
       assert.strictEqual(result, absUrl);
     });
     it('should return default url', () => {
@@ -211,6 +246,16 @@ describe('Utility', () => {
         'http://localhost:8080/registers?AWSAccessKeyId=REDACTED'
       );
     });
+    it('does not perform redaction if the provided path cannot be parsed', () => {
+      const result = utils.getAbsoluteUrl(
+        { path: 'http://?AWSAccessKeyId=secret123' },
+        {}
+      );
+      assert.strictEqual(
+        result,
+        'http://localhosthttp://?AWSAccessKeyId=secret123'
+      );
+    });
   });
 
   describe('setSpanWithError()', () => {
@@ -248,7 +293,11 @@ describe('Utility', () => {
         assert.strictEqual(utils.isValidOptionsType(options), false);
       });
     });
-    for (const options of ['url', url.parse('http://url.com'), {}]) {
+    for (const options of [
+      'url',
+      url.urlToHttpOptions(new URL('http://url.com')),
+      {},
+    ]) {
       it(`should return true with the following value: ${JSON.stringify(
         options
       )}`, () => {
@@ -530,53 +579,44 @@ describe('Utility', () => {
   });
 
   describe('headers to span attributes capture', () => {
-    let span: Span;
-    let mock: sinon.SinonMock;
+    it('should capture attributes for request and response keys', () => {
+      const reqAttrs = utils.headerCapture(
+        'request',
+        ['Origin'],
+        SemconvStability.OLD
+      )(() => 'localhost');
+      const resAttrs = utils.headerCapture(
+        'response',
+        ['Cookie'],
+        SemconvStability.OLD
+      )(() => 'token=123');
 
-    beforeEach(() => {
-      span = {
-        setAttribute: () => undefined,
-      } as unknown as Span;
-      mock = sinon.mock(span);
+      assert.deepStrictEqual(reqAttrs, {
+        'http.request.header.origin': ['localhost'],
+      });
+      assert.deepStrictEqual(resAttrs, {
+        'http.response.header.cookie': ['token=123'],
+      });
     });
 
-    it('should set attributes for request and response keys', () => {
-      mock
-        .expects('setAttribute')
-        .calledWithExactly('http.request.header.origin', ['localhost']);
-      mock
-        .expects('setAttribute')
-        .calledWithExactly('http.response.header.cookie', ['token=123']);
+    it('should capture attributes for multiple values', () => {
+      const attrs = utils.headerCapture(
+        'request',
+        ['Origin'],
+        SemconvStability.OLD
+      )(() => ['localhost', 'www.example.com']);
 
-      utils.headerCapture('request', ['Origin'])(span, () => 'localhost');
-      utils.headerCapture('response', ['Cookie'])(span, () => 'token=123');
-      mock.verify();
+      assert.deepStrictEqual(attrs, {
+        'http.request.header.origin': ['localhost', 'www.example.com'],
+      });
     });
 
-    it('should set attributes for multiple values', () => {
-      mock
-        .expects('setAttribute')
-        .calledWithExactly('http.request.header.origin', [
-          'localhost',
-          'www.example.com',
-        ]);
-
-      utils.headerCapture('request', ['Origin'])(span, () => [
-        'localhost',
-        'www.example.com',
-      ]);
-      mock.verify();
-    });
-
-    it('sets attributes for multiple headers', () => {
-      mock
-        .expects('setAttribute')
-        .calledWithExactly('http.request.header.origin', ['localhost']);
-      mock
-        .expects('setAttribute')
-        .calledWithExactly('http.request.header.foo', [42]);
-
-      utils.headerCapture('request', ['Origin', 'Foo'])(span, header => {
+    it('should capture attributes for multiple headers', () => {
+      const attrs = utils.headerCapture(
+        'request',
+        ['Origin', 'Foo'],
+        SemconvStability.OLD
+      )(header => {
         if (header === 'origin') {
           return 'localhost';
         }
@@ -587,32 +627,63 @@ describe('Utility', () => {
 
         return undefined;
       });
-      mock.verify();
+
+      assert.deepStrictEqual(attrs, {
+        'http.request.header.origin': ['localhost'],
+        'http.request.header.foo': [42],
+      });
     });
 
-    it('should normalize header names', () => {
-      mock
-        .expects('setAttribute')
-        .calledWithExactly('http.request.header.x_forwarded_for', ['foo']);
+    it('should normalize header names (SemconvStability.OLD)', () => {
+      const attrs = utils.headerCapture(
+        'request',
+        ['X-Forwarded-For'],
+        SemconvStability.OLD
+      )(() => 'foo');
+      assert.deepStrictEqual(attrs, {
+        'http.request.header.x_forwarded_for': ['foo'],
+      });
+    });
 
-      utils.headerCapture('request', ['X-Forwarded-For'])(span, () => 'foo');
-      mock.verify();
+    it('should normalize header names (SemconvStability.STABLE)', () => {
+      const attrs = utils.headerCapture(
+        'request',
+        ['X-Forwarded-For'],
+        SemconvStability.STABLE
+      )(() => 'foo');
+      assert.deepStrictEqual(attrs, {
+        'http.request.header.x-forwarded-for': ['foo'],
+      });
+    });
+
+    it('should normalize header names (SemconvStability.DUPLICATE)', () => {
+      // STABLE semconv wins over OLD when "DUPLICATE" is selected.
+      const attrs = utils.headerCapture(
+        'request',
+        ['X-Forwarded-For'],
+        SemconvStability.DUPLICATE
+      )(() => 'foo');
+      assert.deepStrictEqual(attrs, {
+        'http.request.header.x-forwarded-for': ['foo'],
+      });
     });
 
     it('ignores non-existent headers', () => {
-      mock
-        .expects('setAttribute')
-        .once()
-        .calledWithExactly('http.request.header.origin', ['localhost']);
-
-      utils.headerCapture('request', ['Origin', 'Accept'])(span, header => {
+      const attrs = utils.headerCapture(
+        'request',
+        ['Origin', 'Accept'],
+        SemconvStability.OLD
+      )(header => {
         if (header === 'origin') {
           return 'localhost';
         }
 
         return undefined;
       });
-      mock.verify();
+
+      assert.deepStrictEqual(attrs, {
+        'http.request.header.origin': ['localhost'],
+      });
     });
   });
 

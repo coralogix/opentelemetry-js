@@ -1,17 +1,6 @@
 /*
  * Copyright The OpenTelemetry Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 import {
@@ -1345,6 +1334,29 @@ describe('Span', () => {
 
       const s = provider.getTracer('default').startSpan('test') as Span;
       assert.ok(s.attributes.attr);
+    });
+
+    it('should call onEnding with a writeable span', () => {
+      const processor: SpanProcessor = {
+        onStart: span => {
+          span.setAttribute('attr', true);
+        },
+        forceFlush: () => Promise.resolve(),
+        onEnding: span => {
+          span.setAttribute('attr2', true);
+        },
+        onEnd() {},
+        shutdown: () => Promise.resolve(),
+      };
+
+      const provider = new BasicTracerProvider({
+        spanProcessors: [processor],
+      });
+
+      const s = provider.getTracer('default').startSpan('test') as Span;
+      s.end();
+      assert.ok(s.attributes.attr);
+      assert.ok(s.attributes.attr2);
     });
   });
 

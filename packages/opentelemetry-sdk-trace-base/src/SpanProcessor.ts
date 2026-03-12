@@ -1,17 +1,6 @@
 /*
  * Copyright The OpenTelemetry Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 import { Context } from '@opentelemetry/api';
@@ -34,6 +23,15 @@ export interface SpanProcessor {
    * @param span the Span that just started.
    */
   onStart(span: Span, parentContext: Context): void;
+
+  /**
+   * Called when a {@link Span} is ending, if the `span.isRecording()`
+   * returns true.
+   * @param span the Span that is ending.
+   *
+   * @experimental This method is experimental and may break in minor versions of this package
+   */
+  onEnding?(span: Span): void;
 
   /**
    * Called when a {@link ReadableSpan} is ended, if the `span.isRecording()`

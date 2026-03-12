@@ -1,17 +1,6 @@
 /*
  * Copyright The OpenTelemetry Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *      https://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 import { SpanKind, Span, context, propagation } from '@opentelemetry/api';
@@ -23,7 +12,7 @@ import {
   NET_TRANSPORT_VALUE_IP_TCP,
 } from '../../src/semconv';
 import * as assert from 'assert';
-import * as url from 'url';
+import { urlToHttpOptions } from 'url';
 import { HttpInstrumentation } from '../../src/http';
 import { assertSpan } from '../utils/assertSpan';
 import * as utils from '../utils/utils';
@@ -180,7 +169,7 @@ describe('HttpInstrumentation Integration tests', () => {
       assert.strictEqual(spans.length, 0);
 
       const result = await httpRequest.get(
-        new url.URL(`${protocol}://localhost:${mockServerPort}/?query=test`)
+        new URL(`${protocol}://localhost:${mockServerPort}/?query=test`)
       );
 
       spans = memoryExporter.getFinishedSpans();
@@ -207,7 +196,7 @@ describe('HttpInstrumentation Integration tests', () => {
       assert.strictEqual(spans.length, 0);
 
       const result = await httpRequest.get(
-        new url.URL(`${protocol}://localhost:${mockServerPort}/?query=test`),
+        new URL(`${protocol}://localhost:${mockServerPort}/?query=test`),
         {
           headers: { 'x-foo': 'foo' },
         }
@@ -270,7 +259,7 @@ describe('HttpInstrumentation Integration tests', () => {
 
       const headers = { 'x-foo': 'foo' };
       const result = await httpRequest.get(
-        new url.URL(`${protocol}://localhost:${mockServerPort}/?query=test`),
+        new URL(`${protocol}://localhost:${mockServerPort}/?query=test`),
         { headers }
       );
       assert.deepStrictEqual(headers, { 'x-foo': 'foo' });
@@ -284,7 +273,7 @@ describe('HttpInstrumentation Integration tests', () => {
 
       const headers = { 'x-foo': 'foo', forwarded: 'malformed' };
       const result = await httpRequest.get(
-        new url.URL(`${protocol}://localhost:${mockServerPort}/?query=test`),
+        new URL(`${protocol}://localhost:${mockServerPort}/?query=test`),
         { headers }
       );
 
@@ -297,7 +286,7 @@ describe('HttpInstrumentation Integration tests', () => {
       assert.strictEqual(spans.length, 0);
       const options = Object.assign(
         { headers: { Expect: '100-continue' } },
-        url.parse(`${protocol}://localhost:${mockServerPort}/`)
+        urlToHttpOptions(new URL(`${protocol}://localhost:${mockServerPort}/`))
       );
 
       const result = await httpRequest.get(options);
