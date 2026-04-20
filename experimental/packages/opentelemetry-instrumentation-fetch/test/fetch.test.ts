@@ -122,6 +122,7 @@ function waitFor(timeout: number): Promise<void> {
 }
 
 describe('fetch', () => {
+  const originalFetch = globalThis.fetch;
   let workerStarted = false;
 
   const startWorker = async (
@@ -202,15 +203,18 @@ describe('fetch', () => {
       );
     } finally {
       sinon.restore();
+      globalThis.fetch = originalFetch;
     }
   });
 
   describe('enabling/disabling', () => {
+    // const originalFetch = globalThis.fetch;
     let fetchInstrumentation: FetchInstrumentation | undefined;
 
     afterEach(() => {
       fetchInstrumentation?.disable();
       fetchInstrumentation = undefined;
+      // globalThis.fetch = originalFetch;
     });
 
     it('should wrap global fetch when instantiated', () => {
@@ -227,11 +231,11 @@ describe('fetch', () => {
       assert.ok(isWrapped(window.fetch));
     });
 
-    it('should unwrap global fetch when disabled', () => {
+    it('should not unwrap global fetch when disabled', () => {
       fetchInstrumentation = new FetchInstrumentation();
       assert.ok(isWrapped(window.fetch));
       fetchInstrumentation.disable();
-      assert.ok(!isWrapped(window.fetch));
+      assert.ok(isWrapped(window.fetch));
 
       // Avoids ERROR in the logs when calling `disable()` again during cleanup
       fetchInstrumentation = undefined;
@@ -822,6 +826,73 @@ describe('fetch', () => {
             const headers = await assertPropagationHeaders(response);
 
             assert.strictEqual(headers['foo'], 'bar');
+          });
+
+          it('should keep custom headers from init overrides when first arg is a Request object', async () => {
+            const { response } = await tracedFetch({
+              callback: () =>
+                fetch(new Request('/api/echo-headers.json'), {
+                  headers: { foo: 'bar' },
+                }),
+            });
+
+            const headers = await assertPropagationHeaders(response);
+
+            assert.strictEqual(
+              headers['foo'],
+              'bar',
+              'headers from init overrides should be preserved when first arg is a Request'
+            );
+          });
+
+          it('should keep custom headers from init overrides with typed Headers when first arg is a Request object', async () => {
+            const { response } = await tracedFetch({
+              callback: () =>
+                fetch(new Request('/api/echo-headers.json'), {
+                  headers: new Headers({ foo: 'bar' }),
+                }),
+            });
+
+            const headers = await assertPropagationHeaders(response);
+
+            assert.strictEqual(
+              headers['foo'],
+              'bar',
+              'typed headers from init overrides should be preserved when first arg is a Request'
+            );
+          });
+
+          it('should merge headers from Request and init overrides with init taking precedence', async () => {
+            const { response } = await tracedFetch({
+              callback: () =>
+                fetch(
+                  new Request('/api/echo-headers.json', {
+                    headers: {
+                      'x-from-request': 'request-value',
+                      shared: 'from-request',
+                    },
+                  }),
+                  {
+                    headers: {
+                      'x-from-init': 'init-value',
+                      shared: 'from-init',
+                    },
+                  }
+                ),
+            });
+
+            const headers = await assertPropagationHeaders(response);
+
+            assert.strictEqual(
+              headers['x-from-init'],
+              'init-value',
+              'headers from init overrides should be present'
+            );
+            assert.strictEqual(
+              headers['shared'],
+              'from-init',
+              'init overrides should take precedence over Request headers'
+            );
           });
 
           it('should keep custom headers with url, untyped request object and typed (Headers) headers object', async () => {

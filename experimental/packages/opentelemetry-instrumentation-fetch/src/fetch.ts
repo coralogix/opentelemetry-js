@@ -15,7 +15,6 @@ import type { InstrumentationConfig } from '@opentelemetry/instrumentation';
 import {
   SemconvStability,
   semconvStabilityFromStr,
-  isWrapped,
   InstrumentationBase,
   safeExecuteInTheMiddle,
 } from '@opentelemetry/instrumentation';
@@ -110,6 +109,15 @@ export class FetchInstrumentation extends InstrumentationBase<FetchInstrumentati
   private _tasksCount = 0;
 
   private _semconvStability: SemconvStability;
+
+  // Note: Intentionally *not* using `_enabled` as the field name to avoid
+  // any possible confusion with the `_enabled` field used on the *Node.js*
+  // InstrumentationBase class.
+  // Also not initializing the fields to `false` because the base class
+  // constructor already call `enable` modifying their values and it will
+  // set the instrumentaitons in a bas state (enabled, patched but with flags set to false)
+  declare private _isEnabled: boolean;
+  declare private _isFetchPatched: boolean;
 
   constructor(config: FetchInstrumentationConfig = {}) {
     super('@opentelemetry/instrumentation-fetch', VERSION, config);
@@ -382,12 +390,26 @@ export class FetchInstrumentation extends InstrumentationBase<FetchInstrumentati
         this: typeof globalThis,
         ...args: Parameters<typeof fetch>
       ): Promise<Response> {
+        if (!plugin._isEnabled) {
+          return original.apply(this, args);
+        }
         const self = this;
         const url = web.parseUrl(
           args[0] instanceof Request ? args[0].url : String(args[0])
         ).href;
 
-        const options = args[0] instanceof Request ? args[0] : args[1] || {};
+        // Per the Fetch spec, when fetch() is called with a Request object
+        // and a separate init object, the init properties override the
+        // Request's properties. Merge them into a new Request so that
+        // downstream consumers (hooks, header injection, the actual fetch
+        // call) see the correct final values.
+        // See: https://developer.mozilla.org/en-US/docs/Web/API/Request/Request#parameters
+        let options: Request | RequestInit;
+        if (args[0] instanceof Request) {
+          options = args[1] != null ? new Request(args[0], args[1]) : args[0];
+        } else {
+          options = args[1] || {};
+        }
         const createdSpan = plugin._createSpan(url, options);
         if (!createdSpan) {
           return original.apply(this, args);
@@ -600,21 +622,31 @@ export class FetchInstrumentation extends InstrumentationBase<FetchInstrumentati
       );
       return;
     }
-    if (isWrapped(fetch)) {
-      this._unwrap(globalThis, 'fetch');
-      this._diag.debug('removing previous patch for constructor');
+
+    if (this._isEnabled) {
+      return;
     }
+    this._isEnabled = true;
+
+    if (this._isFetchPatched) {
+      this._diag.debug('fetch constructor already patched');
+      return;
+    }
+    this._isFetchPatched = true;
     this._wrap(globalThis, 'fetch', this._patchConstructor());
   }
 
   /**
-   * implements unpatch function
+   * deactivates fetch instrumentation
    */
   override disable(): void {
     if (!hasBrowserPerformanceAPI) {
       return;
     }
-    this._unwrap(globalThis, 'fetch');
+    if (!this._isEnabled) {
+      return;
+    }
+    this._isEnabled = false;
     this._usedResources = new WeakSet<PerformanceResourceTiming>();
   }
 }
