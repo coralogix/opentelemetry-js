@@ -3,12 +3,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 import { ValueType } from '@opentelemetry/api';
-import { Resource, resourceFromAttributes } from '@opentelemetry/resources';
+import type { Resource } from '@opentelemetry/resources';
+import { resourceFromAttributes } from '@opentelemetry/resources';
+import type { MetricData, ResourceMetrics } from '@opentelemetry/sdk-metrics';
 import {
   AggregationTemporality,
   DataPointType,
-  MetricData,
-  ResourceMetrics,
 } from '@opentelemetry/sdk-metrics';
 import * as assert from 'assert';
 import { createExportMetricsServiceRequest } from '../src/metrics/internal';
@@ -981,6 +981,21 @@ describe('Metrics', () => {
       assert.equal(
         Number(deserializedResponse.partialSuccess.rejectedDataPoints),
         1
+      );
+    });
+
+    it('deserializes a malformed response', () => {
+      const malformedResponse =
+        '{ "partialSuccess": { "errorMessage": foo, "rejectedLogRecords": 1, }';
+      const encoder = new TextEncoder();
+      const encodedResponse = encoder.encode(malformedResponse);
+      const deserializedResponse =
+        JsonMetricsSerializer.deserializeResponse(encodedResponse);
+
+      assert.deepEqual(
+        deserializedResponse,
+        {},
+        'Malformed response should result in an empty object being returned'
       );
     });
 

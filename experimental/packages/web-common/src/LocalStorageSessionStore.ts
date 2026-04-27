@@ -3,8 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Session } from './types/Session';
-import { SessionStore } from './types/SessionStore';
+import type { Session } from './types/Session';
+import type { SessionStore } from './types/SessionStore';
 
 const SESSION_STORAGE_KEY = 'opentelemetry-session';
 
@@ -26,7 +26,11 @@ export class LocalStorageSessionStore implements SessionStore {
 
     const sessionData = localStorage.getItem(SESSION_STORAGE_KEY);
     if (sessionData) {
-      return Promise.resolve(JSON.parse(sessionData) as Session);
+      try {
+        return Promise.resolve(JSON.parse(sessionData) as Session);
+      } catch {
+        return Promise.resolve(null);
+      }
     }
     return Promise.resolve(null);
   }

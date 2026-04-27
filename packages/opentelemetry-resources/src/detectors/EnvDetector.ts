@@ -3,10 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Attributes, diag } from '@opentelemetry/api';
+import type { Attributes } from '@opentelemetry/api';
+import { diag } from '@opentelemetry/api';
 import { ATTR_SERVICE_NAME } from '@opentelemetry/semantic-conventions';
-import { ResourceDetectionConfig } from '../config';
-import { DetectedResource, ResourceDetector } from '../types';
+import type { ResourceDetectionConfig } from '../config';
+import type { DetectedResource, ResourceDetector } from '../types';
 import { getStringFromEnv } from '@opentelemetry/core';
 
 /**
@@ -72,9 +73,9 @@ class EnvDetector implements ResourceDetector {
     if (!rawEnvAttributes) return {};
 
     const attributes: Attributes = {};
-    const rawAttributes: string[] = rawEnvAttributes.split(
-      this._COMMA_SEPARATOR
-    );
+    const rawAttributes: string[] = rawEnvAttributes
+      .split(this._COMMA_SEPARATOR)
+      .filter(attr => attr.trim() !== ''); // Filter out empty entries
 
     for (const rawAttribute of rawAttributes) {
       const keyValuePair: string[] = rawAttribute.split(

@@ -4,8 +4,9 @@
  */
 
 /// <reference types="zone.js" />
-import { Context, ContextManager, ROOT_CONTEXT } from '@opentelemetry/api';
-import { TargetWithEvents } from './types';
+import type { Context, ContextManager } from '@opentelemetry/api';
+import { ROOT_CONTEXT } from '@opentelemetry/api';
+import type { TargetWithEvents } from './types';
 import { isListenerObject } from './util';
 
 /* Key name to be used to save a context reference in Zone */
@@ -84,6 +85,17 @@ export class ZoneContextManager implements ContextManager {
       name: zoneName,
       properties: {
         [ZONE_CONTEXT_KEY]: context,
+      },
+      onCancelTask(
+        parentZoneDelegate: ZoneDelegate,
+        currentZone: Zone,
+        targetZone: Zone,
+        task: Task
+      ): Task {
+        if (task.state === 'notScheduled' || task.state === 'running') {
+          return task;
+        }
+        return parentZoneDelegate.cancelTask(targetZone, task);
       },
     });
   }

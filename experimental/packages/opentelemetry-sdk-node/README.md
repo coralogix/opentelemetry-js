@@ -146,6 +146,8 @@ If `resourceDetectors` was not set, you can also use the environment variable `O
   - **NOTE:** future versions of `@opentelemetry/sdk-node` may include additional detectors that will be covered by this scope.
 - `none` - disable resource detection
 
+**NOTE:** `env` and `os` are Node.js-specific detectors with no equivalent in the [OpenTelemetry declarative configuration spec](https://github.com/open-telemetry/opentelemetry-configuration). They are supported when using the `detection/development` block in a declarative config file.
+
 For example, to enable only the `env`, `host` detectors:
 
 ```shell
@@ -241,6 +243,7 @@ OTEL_NODE_EXPERIMENTAL_SDK_METRICS=true
 Currently a subset of the specified metrics are implemented. See the following
 linkes for details:
 
+- Logger metrics: [LoggerMetrics.ts](../sdk-logs/src/LoggerMetrics.ts)
 - Span metrics: [TracerMetrics.ts](../../../packages/opentelemetry-sdk-trace-base/src/TracerMetrics.ts)
 
 ## Useful links

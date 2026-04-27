@@ -6,7 +6,7 @@
 import * as assert from 'assert';
 import * as sinon from 'sinon';
 import { LocalStorageSessionStore } from '../src/LocalStorageSessionStore';
-import { Session } from '../src/types/Session';
+import type { Session } from '../src/types/Session';
 
 describe('LocalStorageSessionStore', () => {
   let store: LocalStorageSessionStore;
@@ -50,5 +50,17 @@ describe('LocalStorageSessionStore', () => {
     const retrieved = await store.get();
 
     assert.deepStrictEqual(retrieved, session);
+  });
+
+  it('return null if localStorage is not available', async () => {
+    sinon.stub(window, 'localStorage').value(undefined);
+    const retrieved = await store.get();
+    assert.strictEqual(retrieved, null);
+  });
+
+  it('return null if stored session is invalid', async () => {
+    getItemStub.returns('invalid-json');
+    const retrieved = await store.get();
+    assert.strictEqual(retrieved, null);
   });
 });

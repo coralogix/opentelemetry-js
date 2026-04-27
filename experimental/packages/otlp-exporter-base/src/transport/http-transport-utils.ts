@@ -6,7 +6,7 @@ import type * as http from 'http';
 import type * as https from 'https';
 import * as zlib from 'zlib';
 import { Readable } from 'stream';
-import { ExportResponse } from '../export-response';
+import type { ExportResponse } from '../export-response';
 import {
   isExportHTTPErrorRetryable,
   parseRetryAfterToMills,
@@ -17,6 +17,13 @@ import { VERSION } from '../version';
 const DEFAULT_USER_AGENT = `OTel-OTLP-Exporter-JavaScript/${VERSION}`;
 
 /**
+ * Maximum response body size (4 MB) that the HTTP transport will read.
+ * If the server sends more data the connection is destroyed and the export
+ * is treated as a non-retryable error regardless of status code.
+ */
+export const MAX_RESPONSE_BODY_SIZE = 4 * 1024 * 1024;
+
+/**
  * Sends data using http
  * @param request
  * @param url
@@ -25,7 +32,6 @@ const DEFAULT_USER_AGENT = `OTel-OTLP-Exporter-JavaScript/${VERSION}`;
  * @param userAgent
  * @param agent
  * @param data
- * @param onDone
  * @param timeoutMillis
  */
 export function sendWithHttp(
@@ -36,105 +42,129 @@ export function sendWithHttp(
   userAgent: string | undefined,
   agent: http.Agent | https.Agent,
   data: Uint8Array,
-  onDone: (response: ExportResponse) => void,
   timeoutMillis: number
-): void {
-  const parsedUrl = new URL(url);
+): Promise<ExportResponse> {
+  return new Promise<ExportResponse>(resolve => {
+    const parsedUrl = new URL(url);
 
-  if (userAgent) {
-    headers['User-Agent'] = `${userAgent} ${DEFAULT_USER_AGENT}`;
-  } else {
-    headers['User-Agent'] = DEFAULT_USER_AGENT;
-  }
-
-  const options: http.RequestOptions | https.RequestOptions = {
-    hostname: parsedUrl.hostname,
-    port: parsedUrl.port,
-    path: parsedUrl.pathname,
-    method: 'POST',
-    headers,
-    agent,
-  };
-
-  const req = request(options, (res: http.IncomingMessage) => {
-    const responseData: Buffer[] = [];
-    res.on('data', chunk => responseData.push(chunk));
-
-    res.on('end', () => {
-      if (res.statusCode && res.statusCode <= 299) {
-        onDone({
-          status: 'success',
-          data: Buffer.concat(responseData),
-        });
-      } else if (res.statusCode && isExportHTTPErrorRetryable(res.statusCode)) {
-        onDone({
-          status: 'retryable',
-          retryInMillis: parseRetryAfterToMills(res.headers['retry-after']),
-        });
-      } else {
-        const error = new OTLPExporterError(
-          res.statusMessage,
-          res.statusCode,
-          Buffer.concat(responseData).toString()
-        );
-        onDone({
-          status: 'failure',
-          error,
-        });
-      }
-    });
-
-    res.on('error', (error: Error) => {
-      // Note: 'end' may still be emitted after 'error' on the same response object.
-      // However, since onDone maps to a Promise resolve/reject, only the first call takes effect.
-      // This will be addressed in https://github.com/open-telemetry/opentelemetry-js/issues/5990
-      if (res.statusCode && res.statusCode <= 299) {
-        // If the response is successful but an error occurs while reading the response,
-        // we consider it a success since the data has been sent successfully.
-        onDone({
-          status: 'success',
-        });
-      } else if (res.statusCode && isExportHTTPErrorRetryable(res.statusCode)) {
-        onDone({
-          status: 'retryable',
-          error: error,
-          retryInMillis: parseRetryAfterToMills(res.headers['retry-after']),
-        });
-      } else {
-        onDone({
-          status: 'failure',
-          error,
-        });
-      }
-    });
-  });
-
-  req.setTimeout(timeoutMillis, () => {
-    req.destroy();
-    onDone({
-      status: 'retryable',
-      error: new Error('Request timed out'),
-    });
-  });
-
-  req.on('error', (error: Error) => {
-    if (isHttpTransportNetworkErrorRetryable(error)) {
-      onDone({
-        status: 'retryable',
-        error,
-      });
+    if (userAgent) {
+      headers['User-Agent'] = `${userAgent} ${DEFAULT_USER_AGENT}`;
     } else {
-      onDone({
+      headers['User-Agent'] = DEFAULT_USER_AGENT;
+    }
+
+    const options: http.RequestOptions | https.RequestOptions = {
+      hostname: parsedUrl.hostname,
+      port: parsedUrl.port,
+      path: parsedUrl.pathname,
+      method: 'POST',
+      headers,
+      agent,
+    };
+
+    const req = request(options, (res: http.IncomingMessage) => {
+      const responseData: Buffer[] = [];
+      let responseSize = 0;
+      res.on('data', (chunk: Buffer) => {
+        responseSize += chunk.length;
+        if (responseSize > MAX_RESPONSE_BODY_SIZE) {
+          const sizeError = new Error(
+            `OTLP export response body exceeded size limit of ${MAX_RESPONSE_BODY_SIZE} bytes`
+          );
+          // Oversized responses are treated as non-retryable errors
+          // regardless of status code.
+          // Resolve before destroying: res.destroy() tears down the socket which
+          // triggers ECONNRESET on req.on('error'), so, resolving first makes that
+          // a no-op. res.on('error') does not fire because destroy() is called
+          // without an error argument.
+          resolve({ status: 'failure', error: sizeError });
+          res.destroy();
+          return;
+        }
+        responseData.push(chunk);
+      });
+
+      res.on('end', () => {
+        if (res.statusCode && res.statusCode <= 299) {
+          resolve({
+            status: 'success',
+            data: Buffer.concat(responseData),
+          });
+        } else if (
+          res.statusCode &&
+          isExportHTTPErrorRetryable(res.statusCode)
+        ) {
+          resolve({
+            status: 'retryable',
+            retryInMillis: parseRetryAfterToMills(res.headers['retry-after']),
+          });
+        } else {
+          const error = new OTLPExporterError(
+            res.statusMessage,
+            res.statusCode,
+            Buffer.concat(responseData).toString()
+          );
+          resolve({
+            status: 'failure',
+            error,
+          });
+        }
+      });
+
+      res.on('error', (error: Error) => {
+        // Note: 'end' may still be emitted after 'error' on the same response object, since we're resolving a promise,
+        // the first call to resolve() will determine the final state.
+        if (res.statusCode && res.statusCode <= 299) {
+          // If the response is successful but an error occurs while reading the response,
+          // we consider it a success since the data has been sent successfully.
+          resolve({
+            status: 'success',
+          });
+        } else if (
+          res.statusCode &&
+          isExportHTTPErrorRetryable(res.statusCode)
+        ) {
+          resolve({
+            status: 'retryable',
+            error: error,
+            retryInMillis: parseRetryAfterToMills(res.headers['retry-after']),
+          });
+        } else {
+          resolve({
+            status: 'failure',
+            error,
+          });
+        }
+      });
+    });
+
+    req.setTimeout(timeoutMillis, () => {
+      req.destroy();
+      resolve({
+        status: 'retryable',
+        error: new Error('Request timed out'),
+      });
+    });
+
+    req.on('error', (error: Error) => {
+      if (isHttpTransportNetworkErrorRetryable(error)) {
+        resolve({
+          status: 'retryable',
+          error,
+        });
+      } else {
+        resolve({
+          status: 'failure',
+          error,
+        });
+      }
+    });
+
+    compressAndSend(req, compression, data, (error: Error) => {
+      resolve({
         status: 'failure',
         error,
       });
-    }
-  });
-
-  compressAndSend(req, compression, data, (error: Error) => {
-    onDone({
-      status: 'failure',
-      error,
     });
   });
 }

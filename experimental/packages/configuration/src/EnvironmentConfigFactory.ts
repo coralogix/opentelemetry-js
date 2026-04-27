@@ -3,37 +3,36 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+import type { ConfigurationModel } from './models/configModel';
+import { initializeDefaultConfiguration } from './models/configModel';
 import {
-  ConfigurationModel,
-  initializeDefaultConfiguration,
-} from './models/configModel';
-import {
-  getBooleanFromEnv,
   getStringFromEnv,
   getStringListFromEnv,
   diagLogLevelFromString,
   getNumberFromEnv,
 } from '@opentelemetry/core';
-import { ConfigFactory } from './IConfigFactory';
+import type { ConfigFactory } from './IConfigFactory';
+import type {
+  PeriodicMetricReader,
+  PullMetricReader,
+} from './models/meterProviderModel';
 import {
   ExemplarFilter,
   ExporterDefaultHistogramAggregation,
   ExporterTemporalityPreference,
   initializeDefaultMeterProviderConfiguration,
-  PeriodicMetricReader,
-  PullMetricReader,
 } from './models/meterProviderModel';
 import { OtlpHttpEncoding } from './models/commonModel';
 import { diag } from '@opentelemetry/api';
-import {
-  BatchSpanProcessor,
-  initializeDefaultTracerProviderConfiguration,
-} from './models/tracerProviderModel';
-import {
-  BatchLogRecordProcessor,
-  initializeDefaultLoggerProviderConfiguration,
-} from './models/loggerProviderModel';
+import type { BatchSpanProcessor } from './models/tracerProviderModel';
+import { initializeDefaultTracerProviderConfiguration } from './models/tracerProviderModel';
+import type { BatchLogRecordProcessor } from './models/loggerProviderModel';
+import { initializeDefaultLoggerProviderConfiguration } from './models/loggerProviderModel';
 import { getGrpcTlsConfig, getHttpTlsConfig } from './utils';
+import type { ExperimentalResourceDetector } from './models/resourceModel';
+import type { EnvValues } from './EnvReader';
+import { readAllEnvVars } from './EnvReader';
+import { SamplerType } from './EnvDefinition';
 
 /**
  * EnvironmentConfigProvider provides a configuration based on environment variables.
@@ -43,24 +42,18 @@ export class EnvironmentConfigFactory implements ConfigFactory {
 
   constructor() {
     this._config = initializeDefaultConfiguration();
-    this._config.disabled = getBooleanFromEnv('OTEL_SDK_DISABLED');
+    const envValues = readAllEnvVars();
+    this._config.disabled = envValues.OTEL_SDK_DISABLED;
 
     const logLevel = diagLogLevelFromString(getStringFromEnv('OTEL_LOG_LEVEL'));
     if (logLevel) {
       this._config.log_level = logLevel;
     }
 
-    const nodeResourceDetectors = getStringListFromEnv(
-      'OTEL_NODE_RESOURCE_DETECTORS'
-    );
-    if (nodeResourceDetectors) {
-      this._config.node_resource_detectors = nodeResourceDetectors;
-    }
-
     setResources(this._config);
     setAttributeLimits(this._config);
     setPropagators(this._config);
-    setTracerProvider(this._config);
+    setTracerProvider(this._config, envValues);
     setMeterProvider(this._config);
     setLoggerProvider(this._config);
   }
@@ -108,6 +101,31 @@ export function setResources(config: ConfigurationModel): void {
       }
     }
   }
+
+  const nodeDetectors = getStringListFromEnv('OTEL_NODE_RESOURCE_DETECTORS');
+  if (
+    nodeDetectors &&
+    nodeDetectors.length > 0 &&
+    !nodeDetectors.includes('none')
+  ) {
+    const all = nodeDetectors.includes('all');
+    const detectors: ExperimentalResourceDetector[] = [];
+    if (all || nodeDetectors.includes('container'))
+      detectors.push({ container: {} });
+    if (all || nodeDetectors.includes('host')) detectors.push({ host: {} });
+    if (all || nodeDetectors.includes('os')) detectors.push({ os: {} });
+    if (all || nodeDetectors.includes('process'))
+      detectors.push({ process: {} });
+    if (all || nodeDetectors.includes('serviceinstance'))
+      detectors.push({ service: {} });
+    if (all || nodeDetectors.includes('env')) detectors.push({ env: {} });
+    if (detectors.length > 0) {
+      if (config.resource['detection/development'] == null) {
+        config.resource['detection/development'] = {};
+      }
+      config.resource['detection/development'].detectors = detectors;
+    }
+  }
 }
 
 export function setAttributeLimits(config: ConfigurationModel): void {
@@ -149,7 +167,59 @@ export function setPropagators(config: ConfigurationModel): void {
   }
 }
 
-export function setTracerProvider(config: ConfigurationModel): void {
+export function setSampler(config: ConfigurationModel, env: EnvValues): void {
+  const sampler = env.OTEL_TRACES_SAMPLER;
+  const arg = env.OTEL_TRACES_SAMPLER_ARG;
+
+  if (!sampler || !config.tracer_provider) {
+    return;
+  }
+
+  const ratio = arg ? parseFloat(arg) : 1.0;
+
+  switch (sampler) {
+    case SamplerType.AlwaysOn:
+      config.tracer_provider.sampler = { always_on: {} };
+      break;
+
+    case SamplerType.AlwaysOff:
+      config.tracer_provider.sampler = { always_off: {} };
+      break;
+
+    case SamplerType.TraceIdRatio:
+      config.tracer_provider.sampler = {
+        trace_id_ratio_based: { ratio },
+      };
+      break;
+
+    case SamplerType.ParentBasedAlwaysOn:
+      config.tracer_provider.sampler = {
+        parent_based: { root: { always_on: {} } },
+      };
+      break;
+
+    case SamplerType.ParentBasedAlwaysOff:
+      config.tracer_provider.sampler = {
+        parent_based: { root: { always_off: {} } },
+      };
+      break;
+
+    case SamplerType.ParentBasedTraceIdRatio:
+      config.tracer_provider.sampler = {
+        parent_based: { root: { trace_id_ratio_based: { ratio } } },
+      };
+      break;
+
+    default:
+      // readEnvVar already warns for invalid values via allowedValues
+      break;
+  }
+}
+
+export function setTracerProvider(
+  config: ConfigurationModel,
+  env: EnvValues
+): void {
   const exportersType = Array.from(
     new Set(getStringListFromEnv('OTEL_TRACES_EXPORTER'))
   );
@@ -163,6 +233,7 @@ export function setTracerProvider(config: ConfigurationModel): void {
     return;
   }
   config.tracer_provider = initializeDefaultTracerProviderConfiguration();
+  setSampler(config, env);
 
   const attributeValueLengthLimit = getNumberFromEnv(
     'OTEL_SPAN_ATTRIBUTE_VALUE_LENGTH_LIMIT'

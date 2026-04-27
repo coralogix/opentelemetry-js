@@ -5,7 +5,8 @@
 
 import * as assert from 'assert';
 import { SeverityNumber } from '@opentelemetry/api-logs';
-import { ExportResult, ExportResultCode } from '@opentelemetry/core';
+import type { ExportResult } from '@opentelemetry/core';
+import { ExportResultCode } from '@opentelemetry/core';
 
 import {
   LoggerProvider,
@@ -82,6 +83,13 @@ describe('InMemoryLogRecordExporter', () => {
       assert.ok(memoryExporter.getFinishedLogRecords().length === 1);
       memoryExporter.reset();
       assert.strictEqual(memoryExporter.getFinishedLogRecords().length, 0);
+    });
+  });
+
+  describe('forceFlush', function () {
+    it('should forceFlush without error', async function () {
+      const exporter = new InMemoryLogRecordExporter();
+      await exporter.forceFlush();
     });
   });
 });

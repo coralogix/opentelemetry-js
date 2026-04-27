@@ -3,11 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import {
-  ExportResultCode,
-  ExportResult,
-  hrTimeToMicroseconds,
-} from '@opentelemetry/core';
+import type { ExportResult } from '@opentelemetry/core';
+import { ExportResultCode, hrTimeToMicroseconds } from '@opentelemetry/core';
 
 import type { ReadableLogRecord } from './ReadableLogRecord';
 import type { LogRecordExporter } from './LogRecordExporter';
@@ -34,10 +31,18 @@ export class ConsoleLogRecordExporter implements LogRecordExporter {
   }
 
   /**
+   * ForceFlush the exporter.
+   * No-op for {@link ConsoleLogRecordExporter}
+   */
+  public async forceFlush(): Promise<void> {
+    // nothing to flush
+  }
+
+  /**
    * Shutdown the exporter.
    */
-  public shutdown(): Promise<void> {
-    return Promise.resolve();
+  public async shutdown(): Promise<void> {
+    // nothing to do
   }
 
   /**
