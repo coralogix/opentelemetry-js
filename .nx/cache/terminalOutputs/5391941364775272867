@@ -1,0 +1,9 @@
+> nx run @opentelemetry/configuration:version
+
+> npm run version
+
+
+> @opentelemetry/configuration@0.215.0 version
+> node ../../../scripts/version-update.js
+
+⠙[1G[0K

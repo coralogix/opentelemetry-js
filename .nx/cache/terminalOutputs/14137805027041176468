@@ -1,0 +1,9 @@
+> nx run @opentelemetry/context-zone:version
+
+> npm run version
+
+
+> @opentelemetry/context-zone@2.7.0 version
+> node ../../scripts/version-update.js
+
+⠙[1G[0K

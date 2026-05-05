@@ -1,0 +1,9 @@
+> nx run @opentelemetry/instrumentation-grpc:version
+
+> npm run version
+
+
+> @opentelemetry/instrumentation-grpc@0.215.0 version
+> node ../../../scripts/version-update.js
+
+⠙[1G[0K

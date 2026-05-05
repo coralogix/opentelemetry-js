@@ -1,0 +1,9 @@
+> nx run @opentelemetry/sdk-trace-node:version
+
+> npm run version
+
+
+> @opentelemetry/sdk-trace-node@2.7.0 version
+> node ../../scripts/version-update.js
+
+⠙[1G[0K

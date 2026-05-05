@@ -32,5 +32,9 @@ jobs:
           ./node_modules/.bin/tsc -p tsconfig.esnext.json
           rm -f tsconfig.publish.cjs.json
           npm pkg set name=@coralogix/instrumentation
+          npm pkg set repository.type=git
+          npm pkg set repository.url="git+https://github.com/${GITHUB_REPOSITORY}.git"
+          npm pkg set homepage="https://github.com/${GITHUB_REPOSITORY}/tree/${GITHUB_REF_NAME}/experimental/packages/opentelemetry-instrumentation"
+          npm pkg set bugs.url="https://github.com/${GITHUB_REPOSITORY}/issues"
           npm publish --ignore-scripts --access public
         working-directory: ./experimental/packages/opentelemetry-instrumentation
