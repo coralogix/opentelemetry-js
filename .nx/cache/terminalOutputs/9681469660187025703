@@ -1,9 +1,0 @@
-> nx run @opentelemetry/sampler-jaeger-remote:version
-
-> npm run version
-
-
-> @opentelemetry/sampler-jaeger-remote@0.215.0 version
-> node ../../../scripts/version-update.js
-
-⠙[1G[0K

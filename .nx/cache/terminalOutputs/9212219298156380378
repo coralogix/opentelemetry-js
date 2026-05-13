@@ -1,9 +1,0 @@
-> nx run @opentelemetry/exporter-logs-otlp-http:version
-
-> npm run version
-
-
-> @opentelemetry/exporter-logs-otlp-http@0.215.0 version
-> node ../../../scripts/version-update.js
-
-⠙[1G[0K

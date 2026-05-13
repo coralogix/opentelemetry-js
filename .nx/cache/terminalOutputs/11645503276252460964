@@ -1,9 +1,0 @@
-> nx run @opentelemetry/shim-opencensus:version
-
-> npm run version
-
-
-> @opentelemetry/shim-opencensus@0.215.0 version
-> node ../../../scripts/version-update.js
-
-⠙[1G[0K

@@ -1,9 +1,0 @@
-> nx run @opentelemetry/exporter-jaeger:version
-
-> npm run version
-
-
-> @opentelemetry/exporter-jaeger@2.7.0 version
-> node ../../scripts/version-update.js
-
-⠙[1G[0K
