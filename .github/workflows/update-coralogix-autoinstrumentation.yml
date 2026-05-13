@@ -1,0 +1,311 @@
+name: Update coralogix-autoinstrumentation from upstream experimental tags
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      target_branch:
+        description: Branch to update
+        required: true
+        default: coralogix-autoinstrumentation
+      upstream_repo:
+        description: Upstream repository owner/name
+        required: true
+        default: open-telemetry/opentelemetry-js
+      upstream_tag:
+        description: Optional experimental tag override
+        required: false
+        default: ''
+
+concurrency:
+  group: update-coralogix-autoinstrumentation
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-branch:
+    runs-on: ubuntu-latest
+    env:
+      DEFAULT_TARGET_BRANCH: coralogix-autoinstrumentation
+      DEFAULT_UPSTREAM_REPO: open-telemetry/opentelemetry-js
+      CONTEXT_DIR: .git/coralogix-sync
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch target branch and upstream tags
+        env:
+          TARGET_BRANCH: ${{ github.event.inputs.target_branch || env.DEFAULT_TARGET_BRANCH }}
+          UPSTREAM_REPO: ${{ github.event.inputs.upstream_repo || env.DEFAULT_UPSTREAM_REPO }}
+        run: |
+          set -euo pipefail
+          git remote add upstream "https://github.com/${UPSTREAM_REPO}.git" 2>/dev/null || git remote set-url upstream "https://github.com/${UPSTREAM_REPO}.git"
+          git fetch origin "+refs/heads/${TARGET_BRANCH}:refs/remotes/origin/${TARGET_BRANCH}" --prune
+          git fetch upstream --tags --prune
+
+      - name: Detect latest upstream experimental tag
+        id: detect
+        env:
+          TARGET_BRANCH: ${{ github.event.inputs.target_branch || env.DEFAULT_TARGET_BRANCH }}
+          REQUESTED_TAG: ${{ github.event.inputs.upstream_tag || '' }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${CONTEXT_DIR}"
+
+          last_merged_tag="$(git tag --merged "origin/${TARGET_BRANCH}" --list 'experimental/v*' | sort -V | tail -n 1)"
+          if [ -z "${last_merged_tag}" ]; then
+            echo "No merged experimental tag found on origin/${TARGET_BRANCH}" >&2
+            exit 1
+          fi
+
+          if [ -n "${REQUESTED_TAG}" ]; then
+            latest_tag="${REQUESTED_TAG}"
+            git rev-parse -q --verify "refs/tags/${latest_tag}" >/dev/null
+          else
+            latest_tag="$(git tag -l 'experimental/v*' | sort -V | tail -n 1)"
+          fi
+
+          if [ -z "${latest_tag}" ]; then
+            echo "No experimental tags found" >&2
+            exit 1
+          fi
+
+          highest_tag="$(printf '%s\n%s\n' "${last_merged_tag}" "${latest_tag}" | sort -V | tail -n 1)"
+          if [ "${highest_tag}" != "${latest_tag}" ]; then
+            echo "Requested or detected tag ${latest_tag} is older than ${last_merged_tag}" >&2
+            exit 1
+          fi
+
+          if [ "${latest_tag}" = "${last_merged_tag}" ]; then
+            echo "has_update=false" >> "${GITHUB_OUTPUT}"
+            echo "last_merged_tag=${last_merged_tag}" >> "${GITHUB_OUTPUT}"
+            echo "latest_tag=${latest_tag}" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          sanitized_tag="${latest_tag//\//-}"
+          update_branch="automation/${TARGET_BRANCH}-${sanitized_tag}"
+
+          echo "has_update=true" >> "${GITHUB_OUTPUT}"
+          echo "last_merged_tag=${last_merged_tag}" >> "${GITHUB_OUTPUT}"
+          echo "latest_tag=${latest_tag}" >> "${GITHUB_OUTPUT}"
+          echo "update_branch=${update_branch}" >> "${GITHUB_OUTPUT}"
+
+      - name: Stop when no new upstream experimental tag exists
+        if: steps.detect.outputs.has_update != 'true'
+        run: |
+          echo "No new upstream experimental tag. Last merged tag: ${{ steps.detect.outputs.last_merged_tag }}"
+
+      - name: Prepare update branch and customization context
+        if: steps.detect.outputs.has_update == 'true'
+        env:
+          TARGET_BRANCH: ${{ github.event.inputs.target_branch || env.DEFAULT_TARGET_BRANCH }}
+          LAST_MERGED_TAG: ${{ steps.detect.outputs.last_merged_tag }}
+          LATEST_TAG: ${{ steps.detect.outputs.latest_tag }}
+          UPDATE_BRANCH: ${{ steps.detect.outputs.update_branch }}
+        run: |
+          set -euo pipefail
+          git checkout -B "${UPDATE_BRANCH}" "origin/${TARGET_BRANCH}"
+
+          git diff --stat "${LAST_MERGED_TAG}..origin/${TARGET_BRANCH}" > "${CONTEXT_DIR}/customizations.diffstat.txt"
+          git diff --name-only "${LAST_MERGED_TAG}..origin/${TARGET_BRANCH}" > "${CONTEXT_DIR}/customizations.files.txt"
+
+          awk -F/ '
+            $1 == "packages" && NF > 1 { print $1 "/" $2 }
+            $1 == "experimental" && $2 == "packages" && NF > 2 { print $1 "/" $2 "/" $3 }
+            $1 == "api" { print "api" }
+            $1 == "semantic-conventions" { print "semantic-conventions" }
+          ' "${CONTEXT_DIR}/customizations.files.txt" | sort -u > "${CONTEXT_DIR}/customization-package-paths.txt"
+
+          {
+            echo "target_branch=${TARGET_BRANCH}"
+            echo "last_merged_tag=${LAST_MERGED_TAG}"
+            echo "latest_tag=${LATEST_TAG}"
+            echo "update_branch=${UPDATE_BRANCH}"
+          } > "${CONTEXT_DIR}/context.env"
+
+      - name: Attempt merge
+        id: merge
+        if: steps.detect.outputs.has_update == 'true'
+        env:
+          LATEST_TAG: ${{ steps.detect.outputs.latest_tag }}
+        run: |
+          set +e
+          git merge --no-commit --no-ff "${LATEST_TAG}" > "${CONTEXT_DIR}/merge.log" 2>&1
+          merge_exit_code=$?
+          set -e
+
+          if [ "${merge_exit_code}" -eq 0 ]; then
+            merge_state="clean"
+          else
+            merge_state="conflicted"
+          fi
+
+          git status --short > "${CONTEXT_DIR}/merge-status.txt"
+
+          echo "merge_exit_code=${merge_exit_code}" >> "${GITHUB_OUTPUT}"
+          echo "merge_state=${merge_state}" >> "${GITHUB_OUTPUT}"
+
+      - name: Setup Node.js
+        if: steps.detect.outputs.has_update == 'true'
+        uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          cache: npm
+          cache-dependency-path: package-lock.json
+          node-version: "22.22.1"
+
+      - name: Prepare Codex prompt and output paths
+        id: codex-files
+        if: steps.detect.outputs.has_update == 'true'
+        env:
+          TARGET_BRANCH: ${{ github.event.inputs.target_branch || env.DEFAULT_TARGET_BRANCH }}
+          LAST_MERGED_TAG: ${{ steps.detect.outputs.last_merged_tag }}
+          LATEST_TAG: ${{ steps.detect.outputs.latest_tag }}
+          UPDATE_BRANCH: ${{ steps.detect.outputs.update_branch }}
+          MERGE_STATE: ${{ steps.merge.outputs.merge_state }}
+        run: |
+          set -euo pipefail
+
+          prompt_file="${CONTEXT_DIR}/codex-prompt.md"
+          output_file="${CONTEXT_DIR}/pr-body.md"
+
+          cat > "${prompt_file}" <<EOF
+          Task: update this fork branch with a newer upstream experimental tag.
+
+          Repository context:
+          - Working branch: ${UPDATE_BRANCH}
+          - PR base branch: ${TARGET_BRANCH}
+          - Last experimental tag already merged in ${TARGET_BRANCH}: ${LAST_MERGED_TAG}
+          - New upstream tag to merge: ${LATEST_TAG}
+          - Initial merge attempt state: ${MERGE_STATE}
+          - Merge log: ${CONTEXT_DIR}/merge.log
+          - Merge status snapshot: ${CONTEXT_DIR}/merge-status.txt
+          - Current Coralogix custom diff summary: ${CONTEXT_DIR}/customizations.diffstat.txt
+          - Current Coralogix custom file list: ${CONTEXT_DIR}/customizations.files.txt
+          - Candidate package roots with custom logic: ${CONTEXT_DIR}/customization-package-paths.txt
+
+          Required work:
+          1. Inspect the diff between ${LAST_MERGED_TAG} and origin/${TARGET_BRANCH} to understand Coralogix customizations that must survive the update.
+          2. Finish merging ${LATEST_TAG} into ${UPDATE_BRANCH}. Resolve conflicts carefully. Keep intended Coralogix behavior unless upstream now covers it.
+          3. Install dependencies if needed, then run focused tests for modules with custom logic. Start from ${CONTEXT_DIR}/customization-package-paths.txt and expand test coverage when your changes require it.
+          4. Fix merge or test issues caused by the update.
+          5. Commit the result. Use this exact commit message: chore: merge ${LATEST_TAG} into ${TARGET_BRANCH}
+          6. Final response format: concise PR body with these sections only:
+             ## Summary
+             ## Customizations preserved
+             ## Tests run
+             ## Risks
+
+          Constraints:
+          - Do not push.
+          - Do not open or edit the PR yourself.
+          - Do not commit files inside ${CONTEXT_DIR}.
+          - Leave the repository clean when finished.
+          EOF
+
+          echo "prompt_file=${prompt_file}" >> "${GITHUB_OUTPUT}"
+          echo "output_file=${output_file}" >> "${GITHUB_OUTPUT}"
+
+      - name: Run Codex merge/update pass
+        if: steps.detect.outputs.has_update == 'true'
+        uses: openai/codex-action@086169432f1d2ab2f4057540b1754d550f6a1189
+        with:
+          openai-api-key: ${{ secrets.PROD_OPENAI_API_KEY }}
+          prompt-file: ${{ steps.codex-files.outputs.prompt_file }}
+          output-file: ${{ steps.codex-files.outputs.output_file }}
+          working-directory: ${{ github.workspace }}
+          sandbox: workspace-write
+          safety-strategy: drop-sudo
+
+      - name: Verify clean merged branch
+        if: steps.detect.outputs.has_update == 'true'
+        run: |
+          set -euo pipefail
+          git diff --check
+          if git rev-parse -q --verify MERGE_HEAD >/dev/null; then
+            echo "Merge still in progress after Codex run" >&2
+            exit 1
+          fi
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "Repository still dirty after Codex run" >&2
+            git status --short >&2
+            exit 1
+          fi
+
+      - name: Prepare PR body
+        id: pr-body
+        if: steps.detect.outputs.has_update == 'true'
+        env:
+          TARGET_BRANCH: ${{ github.event.inputs.target_branch || env.DEFAULT_TARGET_BRANCH }}
+          LAST_MERGED_TAG: ${{ steps.detect.outputs.last_merged_tag }}
+          LATEST_TAG: ${{ steps.detect.outputs.latest_tag }}
+          UPDATE_BRANCH: ${{ steps.detect.outputs.update_branch }}
+          OUTPUT_FILE: ${{ steps.codex-files.outputs.output_file }}
+        run: |
+          set -euo pipefail
+          final_body="${CONTEXT_DIR}/pr-body-final.md"
+          {
+            echo "Automated upstream sync."
+            echo
+            echo "cc @coralogix/team-eco-system"
+            echo
+            echo "- Base branch: \`${TARGET_BRANCH}\`"
+            echo "- Update branch: \`${UPDATE_BRANCH}\`"
+            echo "- Previous merged experimental tag: \`${LAST_MERGED_TAG}\`"
+            echo "- New upstream experimental tag: \`${LATEST_TAG}\`"
+            echo
+            cat "${OUTPUT_FILE}"
+          } > "${final_body}"
+          echo "body_file=${final_body}" >> "${GITHUB_OUTPUT}"
+
+      - name: Push branch and create or update PR
+        if: steps.detect.outputs.has_update == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TARGET_BRANCH: ${{ github.event.inputs.target_branch || env.DEFAULT_TARGET_BRANCH }}
+          LATEST_TAG: ${{ steps.detect.outputs.latest_tag }}
+          UPDATE_BRANCH: ${{ steps.detect.outputs.update_branch }}
+          BODY_FILE: ${{ steps.pr-body.outputs.body_file }}
+        run: |
+          set -euo pipefail
+
+          git push --force-with-lease origin "${UPDATE_BRANCH}"
+
+          pr_title="chore: merge ${LATEST_TAG} into ${TARGET_BRANCH}"
+          pr_number="$(gh pr list \
+            --head "${UPDATE_BRANCH}" \
+            --base "${TARGET_BRANCH}" \
+            --state open \
+            --json number \
+            --jq '.[0].number // empty')"
+
+          if [ -n "${pr_number}" ]; then
+            gh pr edit "${pr_number}" --title "${pr_title}" --body-file "${BODY_FILE}"
+          else
+            gh pr create \
+              --base "${TARGET_BRANCH}" \
+              --head "${UPDATE_BRANCH}" \
+              --title "${pr_title}" \
+              --body-file "${BODY_FILE}"
+            pr_number="$(gh pr list \
+              --head "${UPDATE_BRANCH}" \
+              --base "${TARGET_BRANCH}" \
+              --state open \
+              --json number \
+              --jq '.[0].number // empty')"
+          fi
+
+          if [ -n "${pr_number}" ]; then
+            gh pr edit "${pr_number}" --add-reviewer coralogix/team-eco-system || true
+          fi
