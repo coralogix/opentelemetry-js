@@ -7,9 +7,6 @@
 
 This module provides automatic instrumentation for [`http`](https://nodejs.org/api/http.html) and [`https`](https://nodejs.org/api/https.html).
 
-For automatic instrumentation see the
-[@opentelemetry/sdk-trace-node](https://github.com/open-telemetry/opentelemetry-js/tree/main/packages/opentelemetry-sdk-trace-node) package.
-
 ## Installation
 
 ```bash
@@ -27,24 +24,23 @@ OpenTelemetry HTTP Instrumentation allows the user to automatically collect tele
 To load a specific instrumentation (HTTP in this case), specify it in the Node Tracer's configuration.
 
 ```js
+const { trace } = require('@opentelemetry/api');
 const { HttpInstrumentation } = require('@opentelemetry/instrumentation-http');
-const {
-  ConsoleSpanExporter,
-  NodeTracerProvider,
-  SimpleSpanProcessor,
-} = require('@opentelemetry/sdk-trace-node');
+const { ConsoleSpanExporter, TracerProvider, SimpleSpanProcessor } = require('@opentelemetry/sdk-trace');
 const { registerInstrumentations } = require('@opentelemetry/instrumentation');
 
-const provider = new NodeTracerProvider({
-  spanProcessors: [new SimpleSpanProcessor(new ConsoleSpanExporter())]
+const tracerProvider = new TracerProvider({
+  spanProcessors: [
+    new SimpleSpanProcessor({ exporter: new ConsoleSpanExporter() })
+  ]
 });
-
-provider.register();
+trace.setGlobalTracerProvider(tracerProvider);
+// See https://github.com/open-telemetry/opentelemetry-js/tree/main/packages/sdk-trace/
+// for a more complete example setting up a *context manager* and *propagators*.
 
 registerInstrumentations({
   instrumentations: [new HttpInstrumentation()],
 });
-
 ```
 
 See [examples/http](https://github.com/open-telemetry/opentelemetry-js/tree/main/examples/http) for a short example.
@@ -61,14 +57,26 @@ Options                                 | Type                                  
 `responseHook`                          | `HttpResponseCustomAttributeFunction`      | Function for adding custom attributes before response is handled
 `startIncomingSpanHook`                 | `StartIncomingSpanCustomAttributeFunction` | Function for adding custom attributes before a span is started in incomingRequest
 `startOutgoingSpanHook`                 | `StartOutgoingSpanCustomAttributeFunction` | Function for adding custom attributes before a span is started in outgoingRequest
-`ignoreIncomingRequestHook`             | `IgnoreIncomingRequestFunction`            | HTTP instrumentation will not trace all incoming requests that matched with custom function.
-`ignoreOutgoingRequestHook`             | `IgnoreOutgoingRequestFunction`            | HTTP instrumentation will not trace all outgoing requests that matched with custom function.
+`ignoreIncomingRequestHook`             | `IgnoreIncomingRequestFunction`            | Function for filtering incoming requests. HTTP instrumentation will not trace incoming requests for which the function returns `true`.
+`ignoreOutgoingRequestHook`             | `IgnoreOutgoingRequestFunction`            | Function for filtering outgoing requests. HTTP instrumentation will not trace outgoing requests for which the function returns `true`.
 `disableOutgoingRequestInstrumentation` | `boolean`                                  | Set to true to avoid instrumenting outgoing requests at all. This can be helpful when another instrumentation handles outgoing requests.
 `disableIncomingRequestInstrumentation` | `boolean`                                  | Set to true to avoid instrumenting incoming requests at all. This can be helpful when another instrumentation handles incoming requests.
 `serverName`                            | `string`                                   | The primary server name of the matched virtual host.
 `requireParentforOutgoingSpans`         | Boolean                                    | Require that is a parent span to create new span for outgoing requests.
 `requireParentforIncomingSpans`         | Boolean                                    | Require that is a parent span to create new span for incoming requests.
 `headersToSpanAttributes`               | `object`                                   | Specify which HTTP headers should be captured as span attributes. This is an object of the form `{client: {requestHeaders: [...], responseHeaders: [...]}, server: {requestHeaders: [...], responseHeaders: [...]}}`, where each `[...]` is an array of HTTP header names (case-insensitive) to capture. Client (outgoing requests, incoming responses) and server (incoming requests, outgoing responses) headers will be converted to span attributes in the form of `http.{request,response}.header.$header_name`, e.g. `http.response.header.content_length`. By default hyphens in header names are converted to underscore. However, if stable semantic conventions are selected (see next section), then, hyphens in header names are not changed, e.g. `http.response.header.content-length`.
+
+#### Hook function signatures
+
+Hook type                                  | Parameters                                                                                                   | Return value
+------------------------------------------ | ------------------------------------------------------------------------------------------------------------ | ------------
+`IgnoreIncomingRequestFunction`            | `request: IncomingMessage`                                                                                   | `true` skips tracing the incoming request; `false` traces it
+`IgnoreOutgoingRequestFunction`            | `request: RequestOptions`                                                                                    | `true` skips tracing the outgoing request; `false` traces it
+`HttpRequestCustomAttributeFunction`       | `span: Span`, `request: ClientRequest` or `IncomingMessage`                                                  | `void`
+`HttpResponseCustomAttributeFunction`      | `span: Span`, `response: IncomingMessage` or `ServerResponse`                                                | `void`
+`StartIncomingSpanCustomAttributeFunction` | `request: IncomingMessage`                                                                                   | `Attributes` to add before the incoming request span starts
+`StartOutgoingSpanCustomAttributeFunction` | `request: RequestOptions`                                                                                    | `Attributes` to add before the outgoing request span starts
+`HttpCustomAttributeFunction`              | `span: Span`, `request: ClientRequest` or `IncomingMessage`, `response: IncomingMessage` or `ServerResponse` | `void`
 
 ## Semantic Conventions
 

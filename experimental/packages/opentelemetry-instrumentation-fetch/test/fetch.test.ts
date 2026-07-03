@@ -19,7 +19,7 @@ import {
   X_B3_SAMPLED,
 } from '@opentelemetry/propagator-b3';
 import { ZoneContextManager } from '@opentelemetry/context-zone';
-import * as tracing from '@opentelemetry/sdk-trace-base';
+import * as tracing from '@opentelemetry/sdk-trace';
 import {
   PerformanceTimingNames as PTN,
   WebTracerProvider,
@@ -323,7 +323,9 @@ describe('fetch', () => {
           new FetchInstrumentation(config);
         const dummySpanExporter = new DummySpanExporter();
         const webTracerProviderWithZone = new WebTracerProvider({
-          spanProcessors: [new tracing.SimpleSpanProcessor(dummySpanExporter)],
+          spanProcessors: [
+            new tracing.SimpleSpanProcessor({ exporter: dummySpanExporter }),
+          ],
         });
         registerInstrumentations({
           tracerProvider: webTracerProviderWithZone,
@@ -2431,7 +2433,7 @@ describe('fetch', () => {
           it('span should have correct basic attributes', () => {
             const span: tracing.ReadableSpan = exportedSpans[0];
 
-            assert.strictEqual(span.name, 'HTTP GET', `wrong span name`);
+            assert.strictEqual(span.name, 'HTTP GET', 'wrong span name');
 
             assert.strictEqual(
               span.attributes[ATTR_HTTP_STATUS_CODE],
