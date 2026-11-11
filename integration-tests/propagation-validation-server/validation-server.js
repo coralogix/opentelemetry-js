@@ -3,7 +3,7 @@ const { W3CTraceContextPropagator } = require("@opentelemetry/core");
 const { TracerProvider } = require("@opentelemetry/sdk-trace");
 const { context, propagation, trace, ROOT_CONTEXT } = require("@opentelemetry/api");
 const {
-  AsyncHooksContextManager,
+  AsyncLocalStorageContextManager,
 } = require("@opentelemetry/context-async-hooks");
 const bodyParser = require("body-parser");
 
@@ -11,7 +11,7 @@ const bodyParser = require("body-parser");
 propagation.setGlobalPropagator(new W3CTraceContextPropagator());
 
 // set global context manager
-context.setGlobalContextManager(new AsyncHooksContextManager());
+context.setGlobalContextManager(new AsyncLocalStorageContextManager());
 
 // set global tracer provider
 trace.setGlobalTracerProvider(new TracerProvider());
@@ -31,6 +31,10 @@ app.post("/verify-tracecontext", (req, res) => {
   context.with(propagation.extract(ROOT_CONTEXT, req.headers), () => {
     Promise.all(
       req.body.map((action) => {
+        const callback = new URL(action.url);
+        if (callback.origin !== "http://127.0.0.1:7777") {
+          throw new Error("Unsupported W3C harness callback origin");
+        }
         const span = tracer.startSpan("propagate-w3c");
         let promise;
         context.with(trace.setSpan(context.active(), span), () => {
@@ -38,13 +42,14 @@ app.post("/verify-tracecontext", (req, res) => {
           propagation.inject(context.active(), headers);
           promise = axios
             .post(
-              action.url,
+              `http://127.0.0.1:7777/${encodeURIComponent(callback.pathname.slice(1))}`,
 
               [...action.arguments],
 
               {
                 headers,
                 timeout: 10,
+                maxRedirects: 0,
               }
             )
             .finally(() => {
