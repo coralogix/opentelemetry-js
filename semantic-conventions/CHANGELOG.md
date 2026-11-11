@@ -11,9 +11,15 @@ All notable changes to the semantic-conventions package will be documented in th
 
 ### :bug: Bug Fixes
 
+* fix: resolve the ESM build through the `default` export condition instead of `import` [#7132](https://github.com/open-telemetry/opentelemetry-js/pull/7132) @overbalance
+
 ### :books: Documentation
 
 ### :house: Internal
+
+* build: migrate the build from `tsc` to `tsdown` [#6293](https://github.com/open-telemetry/opentelemetry-js/pull/6293) @overbalance
+  * Output moved from `build/` to `dist/` as `.cjs`/`.mjs`, and the non-standard `esnext` condition is dropped. Public entry points are unchanged.
+* chore: remove the redundant `module` field from `package.json` [#7130](https://github.com/open-telemetry/opentelemetry-js/pull/7130) @overbalance
 
 ## 1.43.0
 

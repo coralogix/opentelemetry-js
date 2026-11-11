@@ -7,13 +7,7 @@
       "dom.iterable"
     ],
     "outDir": "build",
-    "rootDir": ".",
-    "types": [
-      "node",
-      "mocha",
-      "webpack-env",
-      "jquery"
-    ]
+    "rootDir": "."
   },
   "include": [
     "src/**/*.ts",
@@ -30,13 +24,7 @@
       "path": "../../../packages/sdk-trace"
     },
     {
-      "path": "../../../semantic-conventions"
-    },
-    {
-      "path": "../api-logs"
-    },
-    {
-      "path": "../sdk-logs"
+      "path": "../../../packages/sdk-logs"
     }
   ]
 }
