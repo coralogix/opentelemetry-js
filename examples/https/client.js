@@ -1,15 +1,14 @@
 'use strict';
 
+const fs = require('fs');
 const https = require('https');
+const path = require('path');
 const { trace } = require('@opentelemetry/api');
 
 const tracer = trace.getTracer('example-https');
 
-// Disable TLS certificate validate.
-// This is necessary for this example because `npm run server` is using
-// a self-signed certificate ("server-cert.pem"). A client talking to a
-// production HTTP service should never use this environment variable.
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
+// Trust only this example's self-signed certificate. Its subject CN is "ca".
+const ca = fs.readFileSync(path.join(__dirname, 'server-cert.pem'));
 
 /** A function which makes requests and handles response. */
 function makeRequest() {
@@ -21,6 +20,8 @@ function makeRequest() {
       host: 'localhost',
       port: 8443,
       path: '/helloworld',
+      ca,
+      servername: 'ca',
     }, (response) => {
       const body = [];
       response.on('data', (chunk) => body.push(chunk));

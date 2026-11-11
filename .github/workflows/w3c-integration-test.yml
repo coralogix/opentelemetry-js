@@ -34,5 +34,11 @@ jobs:
       - name: Build 🔧
         run: npm run compile
 
+      # The pinned W3C harness uses asyncio.get_event_loop(), which no longer
+      # creates a default event loop on Python 3.14 and later.
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+
       - name: Run W3C Test harness
         run: ./integration-tests/tracecontext-integration-test.sh
