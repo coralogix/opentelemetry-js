@@ -77,6 +77,11 @@ export interface HttpInstrumentationConfig extends InstrumentationConfig {
   disableIncomingRequestInstrumentation?: boolean;
   /** If set to true, outgoing requests will not be instrumented at all. */
   disableOutgoingRequestInstrumentation?: boolean;
+  /**
+   * Set span `error.type` from error HTTP response status codes. Defaults to true.
+   * Does not affect transport exception attributes or HTTP metric attributes.
+   */
+  emitResponseStatusErrorType?: boolean;
   /** Function for adding custom attributes after response is handled */
   applyCustomAttributesOnSpan?: HttpCustomAttributeFunction;
   /** Function for adding custom attributes before request is handled */

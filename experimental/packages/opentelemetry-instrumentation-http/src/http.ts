@@ -437,7 +437,10 @@ export class HttpInstrumentation extends InstrumentationBase<HttpInstrumentation
               SpanKind.CLIENT,
               response.statusCode
             );
-            if (errorType !== undefined) {
+            if (
+              errorType !== undefined &&
+              this.getConfig().emitResponseStatusErrorType !== false
+            ) {
               span.setAttribute(ATTR_ERROR_TYPE, errorType);
             }
           }
@@ -826,7 +829,10 @@ export class HttpInstrumentation extends InstrumentationBase<HttpInstrumentation
     });
 
     const errorType = parseErrorType(SpanKind.SERVER, response.statusCode);
-    if (errorType !== undefined) {
+    if (
+      errorType !== undefined &&
+      this.getConfig().emitResponseStatusErrorType !== false
+    ) {
       span.setAttribute(ATTR_ERROR_TYPE, errorType);
     }
 
