@@ -21,6 +21,31 @@ For notes on migrating to 3.x see [the 3.x migration guide](doc/3.x/migration-gu
 
 ### :house: Internal
 
+## 3.1.0
+
+### :rocket: Features
+
+* feat(resources): Deprecate `envDetector` in favor of separate `resourceAttributesEnvDetector` and `serviceNameEnvDetector`. Also mark `serviceInstanceIdDetector` as stable (the `service.instance.id` semconv attribute is now stable). [#6999](https://github.com/open-telemetry/opentelemetry-js/pull/6999) @trentm
+
+### :bug: Bug Fixes
+
+* fix(context-zone): declare the `@opentelemetry/api` peer dependency so Yarn PnP can resolve it for `context-zone-peer-dep` [#7268](https://github.com/open-telemetry/opentelemetry-js/pull/7268) @Vivek1898
+* fix(core): accept attribute values with shared (non-circular) object references [#7068](https://github.com/open-telemetry/opentelemetry-js/pull/7068) @rajanpanth
+* fix: raise the minimum `@opentelemetry/api` peer dependency version to 1.10.0 for packages that depend on `@opentelemetry/core`, `@opentelemetry/otlp-transformer` or `@opentelemetry/instrumentation`, as these use API 1.10 features. ([#7258](https://github.com/open-telemetry/opentelemetry-js/issues/7258)) @volodymyrshk @pichlermarc
+  * Combining these packages with `@opentelemetry/api` 1.9.x never worked: they failed at runtime. The peer dependency now makes npm report this at install time instead.
+  * If you see a peer dependency error after upgrading, update `@opentelemetry/api` to 1.10.0 or later.
+* fix(propagator-b3): reject trace ids that are not 16 or 32 characters long [#7262](https://github.com/open-telemetry/opentelemetry-js/pull/7262) @adityareddy-dev
+
+### :books: Documentation
+
+* docs(resources): update dead semantic conventions resource specification links [#7254](https://github.com/open-telemetry/opentelemetry-js/pull/7254) @helmipradita
+* docs(migration): note that `@opentelemetry/api` v1.10.0 needs SDK 3.x [#7253](https://github.com/open-telemetry/opentelemetry-js/pull/7253) @adityareddy-dev
+
+### :house: Internal
+
+* perf(sdk-logs, sdk-trace): wait for each distinct pending resource once per batch instead of once per record [#7208](https://github.com/open-telemetry/opentelemetry-js/pull/7208) @shehjaddev
+* ci: update the W3C harness for Python 3.14 [#7236](https://github.com/open-telemetry/opentelemetry-js/pull/7236) @adityareddy-dev
+
 ## 3.0.0
 
 ### :boom: Breaking Changes
@@ -29,7 +54,7 @@ For notes on migrating to 3.x see [the 3.x migration guide](doc/3.x/migration-gu
   * The sdk-trace-node package has been replaced by the `@opentelemetry/sdk-trace` package.
     See the [3.x migration guide](doc/3.x/migration-guide.md) for full migration instructions.
 * chore(shim-opentracing)!: remove the `@opentelemetry/shim-opentracing` package
-  * In the [OpenTelemetry Specification v1.58.0](https://github.com/open-telemetry/opentelemetry-specification/releases/tag/v1.56.0) the [OpenTracing compatibility requirements were deprecated](https://github.com/open-telemetry/opentelemetry-specification/pull/4938). The JavaScript OpenTracing shim package will not receive any more releases after the current [2.11.0 release](https://www.npmjs.com/package/@opentelemetry/shim-opentracing/v/2.11.0) ([source code for last release](https://github.com/open-telemetry/opentelemetry-js/tree/v2.11.0/packages/opentelemetry-shim-opentracing/)).
+  * In the [OpenTelemetry Specification v1.56.0](https://github.com/open-telemetry/opentelemetry-specification/releases/tag/v1.56.0) the [OpenTracing compatibility requirements were deprecated](https://github.com/open-telemetry/opentelemetry-specification/pull/4938). The JavaScript OpenTracing shim package will not receive any more releases after the current [2.12.0 release](https://www.npmjs.com/package/@opentelemetry/shim-opentracing/v/2.12.0) ([source code for last release](https://github.com/open-telemetry/opentelemetry-js/tree/v2.12.0/packages/opentelemetry-shim-opentracing/)).
 * chore(context-async-hooks)!: remove the unused class `AsyncHooksContextManager` [#7078](https://github.com/open-telemetry/opentelemetry-js/pull/7078)
 * feat!: migrate package builds from `tsc` to `tsdown`, emitting dual CJS/ESM output from a single `dist/` directory and declaring an `exports` map on every package [#6293](https://github.com/open-telemetry/opentelemetry-js/pull/6293) @overbalance
   * Importing a package by its name is unaffected in both CommonJS and ESM, as is every subpath listed in its `exports` map.
@@ -37,7 +62,7 @@ For notes on migrating to 3.x see [the 3.x migration guide](doc/3.x/migration-gu
   * The emitted files moved out of `build/src` (CJS), `build/esm` and `build/esnext` (ESM) into `dist/`, using `.cjs`/`.mjs` extensions with matching `.d.cts`/`.d.mts` declarations.
   * `<package>/package.json` is no longer importable for the same reason. Read a package's version from your own dependency metadata, or use `SDK_INFO` from `@opentelemetry/core` for the SDK version.
   * The non-standard `esnext` entry point has been removed; tools that preferred it fall back to `module` (ESM) or `main` (CJS).
-  * Packages that ship separate Node.js and browser implementations export them under explicit subpaths, for example `@opentelemetry/core/platform`. If you depend on something that is only reachable through a deep import, please open an issue so it can be considered for the public API.
+  * If you depend on something that is only reachable through a deep import, please open an issue so it can be considered for the public API.
 * feat(core)!: remove deprecated `getTimeOrigin`, `otperformance`, `_globalThis`, and `unrefTimer` from `@opentelemetry/core` [#7053](https://github.com/open-telemetry/opentelemetry-js/pull/7053)
   * `getTimeOrigin()` — use `performance.timeOrigin` directly.
   * `otperformance` — use the global `performance` object directly.
